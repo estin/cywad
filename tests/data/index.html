@@ -1,0 +1,23 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<script>
+setTimeout(function () {
+    var span = document.createElement('span');
+    span.className = "value1";
+    span.innerHTML = "100.0";
+    document.getElementById("value-wrapper").appendChild(span);
+ 
+    span = document.createElement('span');
+    span.className = "value2";
+    span.innerHTML = "200.0";
+    document.getElementById("value-wrapper").appendChild(span); 
+}, 100);
+</script>
+</head>
+<body>
+  <h1>Mock page</h1>
+  <div id="value-wrapper"></div>
+</body>
+</html>

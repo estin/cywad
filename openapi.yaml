@@ -1,0 +1,187 @@
+openapi: "3.0.0"
+info:
+  version: 0.1.0
+  title: CYWAD API
+  license:
+    name: MIT
+servers:
+    - url: http://127.0.0.1:5000/
+paths:
+  /:
+    get:
+      summary: static files endpoint
+      responses:
+        '200':
+          description: static files
+ 
+  /api/items:
+    get:
+      operationId: items
+      summary: Show items
+      responses:
+        '200':
+          description: List of items
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Items"
+
+  /api/{slug}/update:
+    get:
+      operationId: update
+      summary: force item update
+      parameters:
+        - name: slug
+          in: path
+          description: slug of item to update
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: updated item
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Item" 
+ 
+  /sse:
+    get:
+      summary: server sent events endpoint (SSE)
+      responses:
+        '200':
+          description: data
+          content:
+            text/event-stream:    
+              schema:
+                $ref: "#/components/schemas/Items" 
+  
+ 
+  /screenshot/{uri}:
+    get:
+      operationId: screenshot
+      summary: screenshot
+      parameters:
+        - name: uri
+          in: path
+          description: <slug>/<name>.png of screenshot to fetch 
+          required: true
+          schema:
+              type: string
+      responses:
+        '200':
+          description: screenshot
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary
+ 
+  /widget/png/{width}/{heigth}/{font_size}:
+    get:
+      operationId: widget
+      summary: png widget
+      parameters:
+        - name: width
+          in: path
+          description: width of widget
+          required: true
+          schema:
+              type: number
+        - name: heigth
+          in: path
+          description: heigth of widget
+          required: true
+          schema:
+              type: number 
+        - name: font_size
+          in: path
+          description: font size
+          required: true
+          schema:
+              type: number 
+      responses:
+        '200':
+          description: screenshot
+          content:
+            image/png:
+              schema:
+                type: string
+                format: binary 
+
+components:
+  schemas:
+    Info:
+      properties:
+        now: 
+          type: string
+        name:
+          type: string 
+        description:
+          type: string  
+        version:
+          type: string
+        server_datetime:
+          type: string
+    Items:
+      properties:
+        info:
+            $ref: "#/components/schemas/Info"
+        items:
+            type: array
+            $ref: "#/components/schemas/Item" 
+    SseItem:
+      properties:
+        server_datetime:
+            type: string
+        item:
+          $ref: "#/components/schemas/Item"  
+    Item:
+      properties:
+        name:
+          type: string
+        slug:
+          type: string
+        datetime:
+          type: string
+        scheduled:
+          type: string
+        values:
+          type: array
+          items:
+            $ref: "#/components/schemas/Value" 
+        screenshots:
+          type: array
+          items:
+            $ref: "#/components/schemas/Screenshot"  
+        state:
+          type: string
+          enum: [Idle, InQueue, InWork, Done, Err]
+        previous:
+          properties:
+            datetime:
+              type: string
+            scheduled:
+              type: string
+            values:
+              type: array
+              items:
+                $ref: "#/components/schemas/Value" 
+            screenshots:
+              type: array
+              items:
+                $ref: "#/components/schemas/Screenshot"   
+    Value:
+      properties:
+        key:
+          type: string
+        value:
+          type: number 
+        level:
+          type: string
+    Screenshot:
+      properties:
+        name:
+          type: string
+        uri:
+          type: string

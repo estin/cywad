@@ -1,0 +1,45 @@
+url = "https://github.com/rust-lang/rust"
+name = "rust github stars"
+cron = "0   0   8     *       *  *  *"
+window_width = 1280
+window_height = 1024
+step_timeout = 15000
+step_interval = 1000
+retry = [ 60, 300, 600 ]
+
+# wait before page is ready
+[[steps]]
+kind = "wait"
+exec = """document.querySelector("div.repohead-details-container a[aria-label*='starred']") ? true : false"""
+
+# get count of stars
+[[steps]]
+kind = "value"
+key = "balance"
+exec = """(() => {
+    const el = document.querySelector("div.repohead-details-container a[aria-label*='starred']");
+
+    // red border
+    el.style.borderColor = "red";
+    el.style.borderStyle = "solid"; 
+
+    return parseInt(el.getAttribute("aria-label").split(' ')[0]);
+})()"""
+
+    [[steps.levels]]
+    name = "green"
+    more = 50000
+
+    [[steps.levels]]
+    name = "yellow"
+    less = 50000
+
+    [[steps.levels]]
+    name = "red"
+    less = 30000
+
+
+# take screenshot
+[[steps]]
+kind = "screenshot"
+key = "stars" 
