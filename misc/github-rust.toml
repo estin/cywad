@@ -15,7 +15,7 @@ exec = """document.querySelector("div.repohead-details-container a[aria-label*='
 # get count of stars
 [[steps]]
 kind = "value"
-key = "balance"
+key = "stars"
 exec = """(() => {
     const el = document.querySelector("div.repohead-details-container a[aria-label*='starred']");
 

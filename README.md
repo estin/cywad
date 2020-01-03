@@ -2,6 +2,8 @@
 
 A tool to automate gathering some numeric values as some kind of metrics from web pages )
 
+[Live demo](http://cywad.herokuapp.com/) with [sources](https://github.com/estin/cywad-demo)
+
 | WARNING: This is hobby project to learn Rust! It's works fine, but you can implement it in more simple manner for example by nodejs + puppeteer |
 | --- |
 
@@ -13,6 +15,7 @@ Main features:
  - cron like schedule
  - retry on errors
  - take screenshots
+ - Server sent events endpoint
  - PNG widget for embedding purposes
  - Basic authorization by header or by `?token=` query string parameter
 
@@ -29,7 +32,7 @@ Currently from sources only.
 ```bash
 $ git clone https://github.com/estin/cywad.git
 $ cd cywad
-$ cargo build --features devtools,server,png_widget
+$ cargo build --release --features devtools,server,png_widget
 ```
 
 
@@ -60,7 +63,7 @@ step_interval = 1000
 # retry in seconds
 retry = [ 60, 300, 600 ]
 
-# Step kind is one of 
+# Step kind is one of
 # - `wait` execute step until result would be `true`
 # - `exec` execute code and go to the next step
 # - `screenshot` take screenshot
@@ -80,7 +83,7 @@ exec = """(() => {
 
     // paint red border
     el.style.borderColor = "red";
-    el.style.borderStyle = "solid"; 
+    el.style.borderStyle = "solid";
 
     return parseInt(el.getAttribute("aria-label").split(' ')[0]);
 })()"""
@@ -102,7 +105,7 @@ exec = """(() => {
 # Step2. take screenshot
 [[steps]]
 kind = "screenshot"
-key = "stars" 
+key = "stars"
 ```
 
 
@@ -110,11 +113,11 @@ key = "stars"
 
 Start Chrome devtools with command
 ```bash
-$ chrome -remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --headless --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-sandbox --enable-logging --allow-running-insecure-content --ignore-certificate-errors
+$ chromium --remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --headless --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-sandbox --enable-logging --allow-running-insecure-content --ignore-certificate-errors
 ```
 
 ```bash
-$ cargo run --features devtools -- cli -c misc/github-rust.toml
+$ cargo run --release --features devtools -- cli -c misc/github-rust.toml
 ```
 
 Result is
@@ -154,8 +157,8 @@ Result is
 
 Start server
 ```bash
-$ cargo run --features devtools,server -- serve -p misc --listen 127.0.0.1:8000
-``` 
+$ cargo run --release --features devtools,server -- serve -p misc --listen 127.0.0.1:8000
+```
 
 Get info
 ```bash
@@ -178,7 +181,7 @@ $ curl http://127.0.0.1:8000/api/items | jq
       "scheduled": "2019-12-22T08:00:00+03:00",
       "values": [
         {
-          "key": "balance",
+          "key": "stars",
           "value": 41332,
           "level": "yellow"
         }
@@ -209,7 +212,7 @@ $ curl -v http://127.0.0.1:8000/screenshot/rust-github-stars/stars.png 2>&1 | gr
 Binary file (standard input) matches
 ```
 
-You can check [openapi.yml](openapi.yml) for all available rest API.
+You can check [openapi.yaml](openapi.yaml) for all available rest API.
 
 ## License
 
