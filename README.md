@@ -1,23 +1,23 @@
 # CYWAD
 
-A tool to automate gathering some numeric values as some kind of metrics from web pages )
+A tool automating gathering various numeric values as some kind of metrics from web pages )
 
-[Live demo](http://cywad.herokuapp.com/) with [sources](https://github.com/estin/cywad-demo)
+[Live demo](https://cywad.herokuapp.com/) with [sources](https://github.com/estin/cywad-demo)
 
-| WARNING: This is hobby project to learn Rust! It's works fine, but you can implement it in more simple manner for example by nodejs + puppeteer |
+| WARNING: This is a hobby project to learn Rust! It works, but you can implement it in simpler manner, for example, by nodejs + puppeteer |
 | --- |
 
 Main features:
  - library or binary modes
  - `cli` mode
- - `server` mode to expose result via OpenAPI 3 thought HTTP
- - configurable by simple TOML files
- - cron like schedule
+ - `server` mode to expose result via OpenAPI 3
+ - configurable via TOML files
+ - cron-like schedule
  - retry on errors
- - take screenshots
- - Server sent events endpoint
+ - screenshots
+ - server-sent events
  - PNG widget for embedding purposes
- - Basic authorization by header or by `?token=` query string parameter
+ - basic authorization using a header or by `?token=` query string parameter
 
 Currently supports next `engines`:
 
@@ -212,7 +212,7 @@ $ curl -v http://127.0.0.1:8000/screenshot/rust-github-stars/stars.png 2>&1 | gr
 Binary file (standard input) matches
 ```
 
-You can check [openapi.yaml](openapi.yaml) for all available rest API.
+You can check out [openapi.yaml](openapi.yaml) for all available rest API methods.
 
 ## License
 
