@@ -48,7 +48,8 @@ url = "https://github.com/rust-lang/rust"
 name = "rust github stars"
 
 # cron like schedule for server mode
-cron = "0   0   8     *       *  *  *"
+# https://crates.io/crates/cron
+cron = "0   *   *     *       *  *  *"
 
 # browser window size
 window_width = 1280
@@ -92,15 +93,14 @@ exec = """(() => {
     [[steps.levels]]
     name = "green"
     more = 50000
+ 
+    [[steps.levels]]
+    name = "red"
+    less = 30000 
 
     [[steps.levels]]
     name = "yellow"
     less = 50000
-
-    [[steps.levels]]
-    name = "red"
-    less = 30000
-
 
 # Step2. take screenshot
 [[steps]]
