@@ -31,9 +31,13 @@ extern crate cywad;
 extern crate http;
 extern crate regex;
 
+extern crate cron;
 extern crate image;
 extern crate imageproc;
 extern crate rusttype;
+
+use cron::Schedule;
+use std::str::FromStr;
 
 use futures::Stream;
 
@@ -903,5 +907,68 @@ fn test_retry() {
     {
         let state = state_clone.read().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::Err);
+    }
+}
+
+#[test]
+fn test_cron() {
+    let _ = env_logger::try_init();
+
+    let expression = "0   *   *     *       *  *  *";
+    let config_toml = r#"
+        url = "mock"
+        name = "test cron"
+        cron = "0   *   *     *       *  *  *"
+        retry = [ 10, 15, 60 ]
+        window_width = 1280
+        window_height = 1024
+        step_timeout = 10000
+        step_interval = 10
+
+        [[steps]]
+        kind = "value"
+        exec = """(function () {
+            return 1;
+        })();
+        """
+    "#;
+
+    let config: Config = toml::from_str(&config_toml).expect("parse config error");
+
+    debug!("Config: {:#?}", config);
+
+    assert!(config.cron.is_some());
+
+    let state: SharedState = Arc::new(RwLock::new(State {
+        configs: Vec::new(),
+        results: Vec::new(),
+        tx: None,
+        tx_vec: None,
+    }));
+
+    // initialize
+    let state_clone = state.clone();
+    {
+        let mut state = state_clone.write().expect("RwLock error");
+        state.results.push(ResultItem::new(&config.name));
+        state.configs.push(config.clone());
+    }
+
+    server::populate_initial_state(&state_clone);
+    server::run_scheduler(&state_clone, true);
+    let now = chrono::Local::now();
+    let schedule = Schedule::from_str(expression).unwrap();
+    {
+        let state = state_clone.read().expect("RwLock error");
+        debug!(
+            "Scheduled {:?} {:?}",
+            state.results[0].scheduled,
+            schedule.after(&now).take(1).next()
+        );
+        assert_eq!(
+            state.results[0].scheduled,
+            schedule.after(&now).take(1).next()
+        );
+        assert!(state.results[0].scheduled.unwrap() > now);
     }
 }

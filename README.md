@@ -38,7 +38,7 @@ $ cargo build --release --features devtools,server,png_widget
 
 ## Example - Rust lang stars on github
 
-Create `github-rust`
+Create `github-rust.toml` with next content:
 
 ```toml
 
@@ -73,14 +73,14 @@ retry = [ 60, 300, 600 ]
 # Step0. wait before page is ready
 [[steps]]
 kind = "wait"
-exec = """document.querySelector("div.repohead-details-container a[aria-label*='starred']") ? true : false"""
+exec = """document.querySelector("div.repohead a[aria-label*='starred']") ? true : false"""
 
 # Step1. get count of stars and paint red border on stars badge
 [[steps]]
 kind = "value"
 key = "stars"
 exec = """(() => {
-    const el = document.querySelector("div.repohead-details-container a[aria-label*='starred']");
+    const el = document.querySelector("div.repohead a[aria-label*='starred']");
 
     // paint red border
     el.style.borderColor = "red";
@@ -213,6 +213,23 @@ Binary file (standard input) matches
 ```
 
 You can check out [openapi.yaml](openapi.yaml) for all available rest API methods.
+
+## Testing `devtools` engine
+
+```bash
+$ chromium -remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --headless --disable-gpu --disable-software-rasterizer --disable-dev-shm-usage --no-sandbox --enable-logging --allow
+-running-insecure-content --ignore-certificate-errors
+```
+
+```bash
+$ cargo test --features=devtools,server,png_widget,test_dependencies -- --nocapture
+```
+
+## Testing `webkit2gtk` engine
+
+```bash
+$ cargo test --features=webkit,server,png_widget,test_dependencies -- --nocapture
+``` 
 
 ## License
 

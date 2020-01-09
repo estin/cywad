@@ -661,6 +661,7 @@ pub fn process_retry(state: &SharedState) {
 }
 
 pub fn run_scheduler(state: &SharedState, one_shot: bool) {
+    let mut has_schedules = false;
     let mut schedules: Vec<Option<Schedule>> = vec![];
 
     match state.read() {
@@ -671,6 +672,7 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                     // parse cron
                     match Schedule::from_str(cron_str) {
                         Ok(schedule) => {
+                            has_schedules = true;
                             schedules.push(Some(schedule));
                         }
                         Err(e) => {
@@ -678,6 +680,8 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                             error!("Cron parse error: {}", e);
                         }
                     }
+                } else {
+                    schedules.push(None);
                 }
             }
         }
@@ -689,71 +693,75 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
             .map(|v| v.parse::<u64>().unwrap_or(SCHEDULER_SLEEP))
             .unwrap_or(SCHEDULER_SLEEP),
     );
-    loop {
-        let now = Local::now();
 
+    loop {
         // process retry
         process_retry(state);
 
         // process by schedule
-        for (i, item) in schedules.iter().enumerate() {
-            let schedule = match item {
-                Some(s) => s,
-                None => continue,
-            };
+        if has_schedules {
+            let now = Local::now();
 
-            let datetime = match schedule.after(&now).take(1).next() {
-                Some(i) => i,
-                None => continue,
-            };
+            for (i, item) in schedules.iter().enumerate() {
+                let schedule = match item {
+                    Some(s) => s,
+                    None => continue,
+                };
 
-            match state.write() {
-                Ok(mut state) => {
-                    // check
-                    let fire = match state.results.get_mut(i) {
-                        Some(mut result) => {
-                            if result.state == ResultItemState::InQueue {
-                                continue;
-                            }
+                let datetime = match schedule.after(&now).take(1).next() {
+                    Some(i) => i,
+                    None => continue,
+                };
 
-                            let scheduled = Some(datetime);
-                            if result.scheduled.is_some() && scheduled > result.scheduled {
-                                info!("schedule {} at {:?}", result.name, datetime);
-                                result.state = ResultItemState::InQueue;
-                                result.datetime = now;
+                match state.write() {
+                    Ok(mut state) => {
+                        // check
+                        let fire = match state.results.get_mut(i) {
+                            Some(mut result) => {
+                                let scheduled = Some(datetime);
                                 result.scheduled = scheduled;
-                                result.attempt_count = None;
-                                true
-                            } else {
-                                result.scheduled = scheduled;
-                                false
-                            }
-                        }
-                        None => false,
-                    };
 
-                    // pass to queue
-                    if fire {
-                        if let Some(ref tx) = state.tx {
-                            match tx.lock() {
-                                Ok(tx) => {
-                                    match tx.send(i) {
-                                        Ok(()) => {}
-                                        Err(_) => error!("Failed send by tx channel"),
-                                    };
+                                if result.state == ResultItemState::InQueue {
+                                    continue;
                                 }
-                                Err(_) => error!("Unable lock tx channel"),
-                            };
-                        }
 
-                        state.broadcast(i);
+                                if result.scheduled.is_some() && scheduled > result.scheduled {
+                                    info!("schedule {} at {:?}", result.name, datetime);
+                                    result.state = ResultItemState::InQueue;
+                                    result.datetime = now;
+                                    result.attempt_count = None;
+                                    true
+                                } else {
+                                    result.scheduled = scheduled;
+                                    false
+                                }
+                            }
+                            None => false,
+                        };
+
+                        // pass to queue
+                        if fire {
+                            if let Some(ref tx) = state.tx {
+                                match tx.lock() {
+                                    Ok(tx) => {
+                                        match tx.send(i) {
+                                            Ok(()) => {}
+                                            Err(_) => error!("Failed send by tx channel"),
+                                        };
+                                    }
+                                    Err(_) => error!("Unable lock tx channel"),
+                                };
+                            }
+
+                            state.broadcast(i);
+                        }
                     }
-                }
-                Err(e) => {
-                    error!("RWLock error: {}", e);
-                    continue;
-                }
-            };
+                    Err(e) => {
+                        error!("RWLock error: {}", e);
+                        continue;
+                    }
+                };
+            }
         }
 
         if one_shot {
