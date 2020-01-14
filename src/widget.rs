@@ -7,7 +7,9 @@ use image::{png, ColorType, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rusttype::{point, Font, FontCollection, Scale};
 
-use core::{AppInfo, ResultItemState, SharedState};
+use crate::core::{AppInfo, ResultItemState, SharedState};
+
+use failure::format_err;
 
 macro_rules! load_font {
     ($path:tt) => {{

@@ -1,4 +1,6 @@
 use chrono::prelude::{DateTime, Local};
+use log::{debug, error};
+use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
@@ -10,6 +12,7 @@ use std::sync::{Arc, Mutex, RwLock};
 use cron::Schedule;
 
 use failure::Error;
+use failure::{bail, format_err};
 use slug::slugify;
 
 pub const APP_NAME: Option<&'static str> = option_env!("CARGO_PKG_NAME");
@@ -402,7 +405,7 @@ impl ExecutionContext {
 
                     item.values.push(ValueItem {
                         value,
-                        key: key.to_owned(),
+                        key,
                         level: if let Some(ref levels) = step.levels {
                             get_level(value, levels)
                         } else {

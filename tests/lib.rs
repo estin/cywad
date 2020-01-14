@@ -1,51 +1,17 @@
-extern crate env_logger;
-#[macro_use]
-extern crate log;
-
-#[macro_use]
-extern crate lazy_static;
-
-#[macro_use]
-extern crate failure;
-
-extern crate bytes;
-extern crate chrono;
-extern crate futures;
-extern crate tokio;
-extern crate toml;
-
-extern crate serde;
-extern crate serde_json;
-
-extern crate actix;
-extern crate actix_codec;
-extern crate actix_cors;
-extern crate actix_files;
-extern crate actix_service;
-extern crate actix_utils;
-extern crate actix_web;
-extern crate actix_web_actors;
-extern crate awc;
-extern crate base64;
-extern crate cywad;
-extern crate http;
-extern crate regex;
-
-extern crate cron;
-extern crate image;
-extern crate imageproc;
-extern crate rusttype;
-
+use actix_rt;
 use cron::Schedule;
-use std::str::FromStr;
+use failure::format_err;
 
-use futures::Stream;
+use lazy_static::lazy_static;
+use log::debug;
+use std::str::FromStr;
 
 use actix_web::*;
 
+use actix_web::{test, web, App};
+
 use std::panic;
 use std::str;
-// use std::thread;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
 use std::sync::mpsc;
@@ -54,9 +20,12 @@ use std::sync::{Arc, Mutex, RwLock};
 use std::thread;
 use std::time::Duration;
 
-use actix_service::Service;
 use actix_web::http::StatusCode;
 use actix_web::HttpServer;
+
+use futures_util::future::FutureExt;
+use futures_util::stream::StreamExt;
+use futures_util::stream::TryStreamExt;
 
 use cywad::core::{
     validate_config, Config, ResultItem, ResultItemState, ScreenshotItem, SharedState, State,
@@ -114,7 +83,7 @@ fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
                 // configure mock server
                 let sys = actix::System::new("mock-server");
 
-                fn index(req: HttpRequest) -> Result<HttpResponse> {
+                async fn index(req: HttpRequest) -> Result<HttpResponse> {
                     debug!("Mock server request {:?}", req);
 
                     let mut content: Option<String> = None;
@@ -143,17 +112,22 @@ fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
                     thread::current().id(),
                 );
 
-                let _ = HttpServer::new(|| App::new().route("/", web::get().to(index)))
-                    .bind(listen)
-                    .unwrap_or_else(|_| panic!("Can not bind to {}", listen))
-                    .shutdown_timeout(0)
-                    .workers(1)
-                    .start();
+                let fut = async move {
+                    HttpServer::new(|| App::new().route("/", web::get().to(index)))
+                        .bind(listen)
+                        .unwrap_or_else(|_| panic!("Can not bind to {}", listen))
+                        .shutdown_timeout(0)
+                        .workers(1)
+                        .run()
+                        .await?;
+                    Ok::<(), Error>(())
+                };
 
                 tx.send(format!("http://{}/", listen))
                     .expect("tx send error");
 
                 debug!("Starting mock http server: {}", listen);
+                actix::spawn(fut.map(|_| ()));
                 let _ = sys.run();
             });
 
@@ -276,7 +250,7 @@ fn test_engine_success() -> Result<(), failure::Error> {
         window_width = 1280
         window_height = 1024
         step_timeout = 1000
-        step_interval = 10
+        step_interval = 100
 
         [[steps]]
         kind = "wait"
@@ -361,7 +335,7 @@ fn test_engine_success() -> Result<(), failure::Error> {
     {
         let mut state = state_clone.write().expect("RwLock error");
         state.results.push(ResultItem::new(&config.name));
-        state.configs.push(config.clone());
+        state.configs.push(config);
     }
 
     assert!(engine
@@ -427,7 +401,7 @@ fn test_engine_timeout() -> Result<(), failure::Error> {
     {
         let mut state = state_clone.write().expect("RwLock error");
         state.results.push(ResultItem::new(&config.name));
-        state.configs.push(config.clone());
+        state.configs.push(config);
     }
 
     assert!(engine
@@ -488,7 +462,7 @@ fn test_engine_error() -> Result<(), failure::Error> {
     {
         let mut state = state_clone.write().expect("RwLock error");
         state.results.push(ResultItem::new(&config.name));
-        state.configs.push(config.clone());
+        state.configs.push(config);
     }
 
     assert!(engine
@@ -503,8 +477,8 @@ fn test_engine_error() -> Result<(), failure::Error> {
 }
 
 #[cfg(any(feature = "devtools", feature = "server"))]
-#[test]
-fn test_server() -> Result<(), failure::Error> {
+#[actix_rt::test]
+async fn test_server() -> Result<(), failure::Error> {
     let config_toml = r#"
         url = "mock"
         name = "some-test-name"
@@ -597,21 +571,22 @@ fn test_server() -> Result<(), failure::Error> {
             config: web_config.clone(),
         };
         App::new()
-            .register_data(web::Data::new(web_state))
+            .data(web_state)
             .configure(|cfg| server::configure_app(cfg, web_config.clone()))
-    });
+    })
+    .await;
 
     // info
     let req = test::TestRequest::get().uri("/api/info").to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    // .map_err(|e| format_err!("actix error: {}", e))
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
     // items
     let req = test::TestRequest::get().uri("/api/items").to_request();
-    let bytes = test::read_response(&mut srv, req);
+    let bytes = test::read_response(&mut srv, req).await;
     let body = str::from_utf8(&bytes).unwrap();
     let data: server::ItemsResponse = serde_json::from_str(body).unwrap();
-    // let data: server::ItemsResponse = test::read_response_json(&mut srv, req);
     debug!("items {:?}", data.items);
     assert_eq!(data.items.len(), 1);
     let item = &data.items[0];
@@ -625,7 +600,7 @@ fn test_server() -> Result<(), failure::Error> {
     let req = test::TestRequest::get()
         .uri(&format!("/screenshot/{}/test", item.slug))
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
     assert_eq!(
         resp.headers().get(http::header::CONTENT_TYPE),
@@ -638,12 +613,12 @@ fn test_server() -> Result<(), failure::Error> {
     let req = test::TestRequest::get()
         .uri(&format!("/api/{}/update", item.slug))
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
     // items
     let req = test::TestRequest::get().uri("/api/items").to_request();
-    let bytes = test::read_response(&mut srv, req);
+    let bytes = test::read_response(&mut srv, req).await;
     let body = str::from_utf8(&bytes).unwrap();
     let data: server::ItemsResponse = serde_json::from_str(body).unwrap();
     // let data: server::ItemsResponse = test::read_response_json(&mut srv, req);
@@ -660,7 +635,7 @@ fn test_server() -> Result<(), failure::Error> {
     // sse
     let item_clone = item.clone();
     let req = test::TestRequest::get().uri("/sse").to_request();
-    let mut resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let mut resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
     {
@@ -679,36 +654,28 @@ fn test_server() -> Result<(), failure::Error> {
     handle.join().unwrap();
 
     // item
-    let mut resp = match test::block_on(resp.take_body().into_future()) {
-        Ok((bytes, response)) => {
-            let bytes = bytes.unwrap();
-            let body = str::from_utf8(&bytes).unwrap();
-            let payload = body.split("data: ").nth(1).unwrap();
-            let data: server::ItemPush = serde_json::from_str(payload).unwrap();
-            assert_eq!(item.slug, data.item.slug);
-            response
-        }
-        Err(_) => panic!("failed"),
-    };
+    let (bytes, resp) = resp.take_body().into_stream().into_future().await;
+    assert!(bytes.is_some());
+    let bytes = bytes.unwrap().unwrap();
+    let body = str::from_utf8(&bytes).unwrap();
+    let payload = body.split("data: ").nth(1).unwrap();
+    let data: server::ItemPush = serde_json::from_str(payload).unwrap();
+    assert_eq!(item.slug, data.item.slug);
 
     // heartbeat
-    match test::block_on(resp.take_body().into_future()) {
-        Ok((bytes, _)) => {
-            assert!(bytes.is_some());
-            let bytes = bytes.unwrap();
-            let body = str::from_utf8(&bytes).unwrap();
-            assert!(body.contains("event: heartbeat"));
-            let payload = body.split("data: ").nth(1).unwrap();
-            let _heartbeat: server::HeartBeat = serde_json::from_str(payload).unwrap();
-        }
-        Err(_) => panic!("failed"),
-    };
+    let (bytes, _) = resp.into_future().await;
+    assert!(bytes.is_some());
+    let bytes = bytes.unwrap().unwrap();
+    let body = str::from_utf8(&bytes).unwrap();
+    assert!(body.contains("event: heartbeat"));
+    let payload = body.split("data: ").nth(1).unwrap();
+    let _heartbeat: server::HeartBeat = serde_json::from_str(payload).unwrap();
 
     // widget
     let req = test::TestRequest::get()
         .uri("/widget/png/480/300/12")
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
     assert_eq!(
         resp.headers().get(http::header::CONTENT_TYPE),
@@ -719,8 +686,8 @@ fn test_server() -> Result<(), failure::Error> {
     Ok(())
 }
 
-#[test]
-fn test_server_basic_auth() -> Result<(), failure::Error> {
+#[actix_rt::test]
+async fn test_basic_auth() -> Result<(), failure::Error> {
     let state: SharedState = Arc::new(RwLock::new(State {
         configs: Vec::new(),
         results: Vec::new(),
@@ -738,17 +705,18 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
             config: web_config.clone(),
         };
         App::new()
-            .register_data(web::Data::new(web_state))
+            .data(web_state)
             .wrap(server::BasicAuth::new(
                 web_config.username.as_ref().map(|v| v.as_ref()),
                 web_config.password.as_ref().map(|v| v.as_ref()),
             ))
             .configure(|cfg| server::configure_app(cfg, web_config.clone()))
-    });
+    })
+    .await;
 
     // info
     let req = test::TestRequest::get().uri("/api/info").to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_client_error());
     assert_eq!(
         resp.headers().get(http::header::WWW_AUTHENTICATE),
@@ -764,7 +732,7 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
             format!("Basic {}", base64::encode("test:test")),
         )
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
     let req = test::TestRequest::get()
@@ -774,7 +742,7 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
             format!("Basic {}", base64::encode("test:wrong")),
         )
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_client_error());
     assert_eq!(
         resp.headers().get(http::header::WWW_AUTHENTICATE),
@@ -786,7 +754,7 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
     let req = test::TestRequest::get()
         .uri("/widget/png/480/300/12")
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_client_error());
     assert_eq!(
         resp.headers().get(http::header::WWW_AUTHENTICATE),
@@ -801,7 +769,7 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
             base64::encode("test:test")
         ))
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
     let req = test::TestRequest::get()
@@ -810,7 +778,7 @@ fn test_server_basic_auth() -> Result<(), failure::Error> {
             base64::encode("test:wrong")
         ))
         .to_request();
-    let resp = test::block_on(srv.call(req)).map_err(|e| format_err!("actix error: {}", e))?;
+    let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_client_error());
     assert_eq!(
         resp.headers().get(http::header::WWW_AUTHENTICATE),
@@ -858,11 +826,11 @@ fn test_retry() {
     }));
 
     // initialize
-    let state_clone = state.clone();
+    let state_clone = state;
     {
         let mut state = state_clone.write().expect("RwLock error");
         state.results.push(ResultItem::new(&config.name));
-        state.configs.push(config.clone());
+        state.configs.push(config);
     }
 
     // attempt == 1
@@ -947,11 +915,11 @@ fn test_cron() {
     }));
 
     // initialize
-    let state_clone = state.clone();
+    let state_clone = state;
     {
         let mut state = state_clone.write().expect("RwLock error");
         state.results.push(ResultItem::new(&config.name));
-        state.configs.push(config.clone());
+        state.configs.push(config);
     }
 
     server::populate_initial_state(&state_clone);

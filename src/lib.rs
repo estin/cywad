@@ -1,22 +1,4 @@
-#[macro_use]
-extern crate cfg_if;
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-
-#[macro_use]
-extern crate failure;
-
-extern crate toml;
-
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate base64;
-extern crate chrono;
-extern crate clap;
-extern crate serde_json;
-extern crate slug;
+use cfg_if::cfg_if;
 
 #[cfg(all(feature = "webkit", feature = "devtools"))]
 compile_error!("features `crate/webkit` and `crate/devtools` are mutually exclusive");

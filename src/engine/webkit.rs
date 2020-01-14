@@ -16,6 +16,9 @@ use super::traits::EngineTrait;
 use super::EngineOptions;
 use chrono::prelude::Local;
 
+use failure::format_err;
+use log::{debug, error, info, warn};
+
 pub struct Webkit;
 
 macro_rules! glade_template {

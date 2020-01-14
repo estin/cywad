@@ -6,49 +6,53 @@ use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time;
 
+use std::pin::Pin;
+use std::task::{Context, Poll};
+
 use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
 use serde_json;
 
+use cfg_if::cfg_if;
 use chrono;
 use chrono::prelude::{DateTime, Local};
+use failure::format_err;
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 
 use cron::Schedule;
 
 use base64;
 use bytes::Bytes;
-use futures::{task, Async, Future, Poll, Stream};
-// use http::header::{AUTHORIZATION, WWW_AUTHENTICATE};
-use http::header::AUTHORIZATION;
+use futures::future::FutureExt;
+use futures::{Future, Stream};
+use ::http::header::AUTHORIZATION;
 use tokio;
-use tokio::timer::Delay;
+use tokio::time::delay_for;
 
 use actix;
 use actix_cors::Cors;
-// use actix_web::http::{ContentEncoding, Cookie, StatusCode};
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::middleware::Logger;
-// use actix_web::middleware::{Middleware, Response, Started};
 use actix_files as fs;
 
 use actix_service::{Service, Transform};
 use actix_web::http::header::{HeaderName, HeaderValue};
 use actix_web::{dev::ServiceRequest, dev::ServiceResponse, Error};
-use futures::future::{ok, FutureResult};
+use futures::future::{ok, Ready};
 
-// use actix_web::body::MessageBody;
 use actix_web::HttpServer;
 use actix_web::*;
 
 use regex::Regex;
 
-use core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
+use crate::core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
 
 cfg_if! {
     if #[cfg(feature = "png_widget")] {
         use hex;
-        use widget::PNGWidget;
+        use crate::widget::PNGWidget;
     }
 }
 
@@ -144,7 +148,7 @@ where
     type Error = Error;
     type InitError = ();
     type Transform = BasicAuthMiddleware<S>;
-    type Future = FutureResult<Self::Transform, Self::InitError>;
+    type Future = Ready<Result<Self::Transform, Self::InitError>>;
 
     fn new_transform(&self, service: S) -> Self::Future {
         ok(BasicAuthMiddleware {
@@ -173,24 +177,23 @@ where
     type Request = ServiceRequest;
     type Response = ServiceResponse<B>;
     type Error = Error;
-    // type Future = Box<Future<Item = Self::Response, Error = Self::Error>>;
-    type Future = Box<dyn Future<Item = Self::Response, Error = Self::Error>>;
+    type Future = Pin<Box<dyn Future<Output = Result<Self::Response, Self::Error>>>>;
 
-    fn poll_ready(&mut self) -> Poll<(), Self::Error> {
-        self.service.poll_ready()
+    fn poll_ready(&mut self, cx: &mut Context<'_>) -> Poll<Result<(), Self::Error>> {
+        self.service.poll_ready(cx)
     }
 
     fn call(&mut self, req: ServiceRequest) -> Self::Future {
         let inner_credentials = match self.inner.credentials {
             Some(ref c) => c,
             _ => {
-                return Box::new(self.service.call(req));
+                return Box::pin(self.service.call(req));
             }
         };
 
         // skip check for static files, exclude screenshots
         if self.inner.static_re.is_match(req.path()) & !req.path().contains("/screenshot") {
-            return Box::new(self.service.call(req));
+            return Box::pin(self.service.call(req));
         }
 
         // check by token query param
@@ -198,7 +201,7 @@ where
             actix_web::web::Query::<WithTokenRequest>::from_query(req.query_string())
         {
             if params.into_inner().token == *inner_credentials {
-                return Box::new(self.service.call(req));
+                return Box::pin(self.service.call(req));
             }
         } else {
             // check by AUTHORIZATION header
@@ -207,20 +210,24 @@ where
                     if let Some(credentials) = header.split("Basic ").nth(1) {
                         if inner_credentials == credentials {
                             let cywad_token = credentials.to_owned();
-                            return Box::new(self.service.call(req).and_then(move |mut res| {
+
+                            let fut = self.service.call(req);
+
+                            return Box::pin(async move {
+                                let mut res = fut.await?;
                                 res.headers_mut().insert(
                                     HeaderName::from_lowercase(b"cywad-token").unwrap(),
                                     HeaderValue::from_str(&cywad_token).unwrap(),
                                 );
-                                res
-                            }));
+                                Ok(res)
+                            });
                         }
                     }
                 }
             }
         }
 
-        Box::new(ok(req.into_response(
+        Box::pin(ok(req.into_response(
             HttpResponse::Unauthorized()
                 .header(http::header::WWW_AUTHENTICATE, "Basic realm=\"CYWAD\"")
                 .finish()
@@ -229,7 +236,7 @@ where
     }
 }
 
-fn info(req: HttpRequest) -> Result<HttpResponse> {
+async fn info(req: HttpRequest) -> Result<HttpResponse> {
     debug!("{:?}", req);
     let body = serde_json::to_string(&AppInfo::default())?;
 
@@ -238,7 +245,7 @@ fn info(req: HttpRequest) -> Result<HttpResponse> {
         .body(body))
 }
 
-fn items(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
+async fn items(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
     debug!("{:?}", req);
 
     let state = web_state
@@ -259,7 +266,7 @@ fn items(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpRespons
         .body(body))
 }
 
-fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
+async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
     debug!("{:?}", req);
     let slug = req.match_info().query("slug");
     let now = Local::now();
@@ -343,7 +350,7 @@ fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpRespon
         .body(body))
 }
 
-fn screenshot(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
+async fn screenshot(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
     debug!("{:?}", req);
 
     let slug = req.match_info().query("slug");
@@ -374,9 +381,8 @@ fn screenshot(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpRe
     }
 }
 
-fn sse(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
+async fn sse(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
     debug!("{:?}", req);
-
     let reader: Option<Sse> = {
         let (tx, rx) = channel::<ResultItem>();
 
@@ -398,16 +404,16 @@ fn sse(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse>
         }
     };
 
-    if let Some(reader) = reader {
-        return Ok(HttpResponse::build(StatusCode::OK)
+    if let Some(sse_stream) = reader {
+        Ok(HttpResponse::build(StatusCode::OK)
             .set_header(http::header::CONTENT_TYPE, "text/event-stream")
             .set_header(
                 http::header::CONTENT_ENCODING,
                 ContentEncoding::Identity.as_str(),
             )
-            .streaming(reader));
+            .streaming(sse_stream))
     } else {
-        return Ok(HttpResponse::build(StatusCode::BAD_REQUEST).finish());
+        Ok(HttpResponse::build(StatusCode::BAD_REQUEST).finish())
     }
 }
 
@@ -419,21 +425,25 @@ struct Sse {
 }
 
 impl Stream for Sse {
-    type Item = Bytes;
-    type Error = Error;
+    type Item = Result<Bytes, Error>;
 
-    fn poll(&mut self) -> Poll<Option<Bytes>, Error> {
+    // fn poll_next(&mut self) -> Poll<Result<Option<Bytes>, Error>> {
+    fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
         match self.rx.try_recv() {
             Ok(item) => {
-                self.last_send = Instant::now();
+                self.get_mut().last_send = Instant::now();
                 let data = ItemPush {
                     server_datetime: Local::now(),
                     item: Cow::Borrowed(&item),
                 };
-                let payload = serde_json::to_string(&data)?;
-                Ok(Async::Ready(Some(Bytes::from(
-                    &format!("event: item\ndata: {}\n\n", payload)[..],
-                ))))
+                if let Ok(payload) = serde_json::to_string(&data) {
+                    Poll::Ready(Some(Ok(Bytes::copy_from_slice(
+                        &format!("event: item\ndata: {}\n\n", payload).as_bytes(),
+                    ))))
+                } else {
+                    // failed to serialize to json. terminate stream
+                    Poll::Ready(None)
+                }
             }
             Err(e) => {
                 match e {
@@ -441,27 +451,28 @@ impl Stream for Sse {
                         let now = Instant::now();
 
                         if now.duration_since(self.last_send) > self.hb_duration {
-                            self.last_send = now;
-                            let payload = serde_json::to_string(&HeartBeat::default())?;
-                            return Ok(Async::Ready(Some(Bytes::from(
-                                &format!("event: heartbeat\ndata: {}\n\n", payload)[..],
-                            ))));
+                            self.get_mut().last_send = now;
+                            if let Ok(payload) = serde_json::to_string(&HeartBeat::default()) {
+                                return Poll::Ready(Some(Ok(Bytes::copy_from_slice(
+                                    &format!("event: heartbeat\ndata: {}\n\n", payload).as_bytes(),
+                                ))));
+                            } else {
+                                // failed to serialize to json. terminate stream
+                                return Poll::Ready(None);
+                            }
                         }
 
                         // register task to wake up stream
-                        let notify_task = task::current();
-                        let task = Delay::new(now + self.wakeup_duration)
-                            .and_then(move |_| {
-                                notify_task.notify();
-                                Ok(())
-                            })
-                            .map_err(|_| unreachable!());
+                        let waker = cx.waker().clone();
+                        let wakeup_duration = self.wakeup_duration;
+                        tokio::spawn(async move {
+                            delay_for(wakeup_duration).await;
+                            waker.wake();
+                        });
 
-                        tokio::spawn(task);
-
-                        Ok(Async::NotReady)
+                        Poll::Pending
                     }
-                    TryRecvError::Disconnected => Ok(Async::Ready(None)),
+                    TryRecvError::Disconnected => Poll::Ready(None),
                 }
             }
         }
@@ -469,7 +480,7 @@ impl Stream for Sse {
 }
 
 #[cfg(feature = "png_widget")]
-fn png_widget(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
+async fn png_widget(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpResponse> {
     debug!("{:?}", req);
     let match_info = req.match_info();
     let w = match_info.query("width");
@@ -525,19 +536,20 @@ pub fn configure_app(cfg: &mut web::ServiceConfig, web_config: WebConfig) {
 pub fn serve(listen: &str, state: SharedState, web_config: WebConfig) {
     let sys = actix::System::new("balance-informer");
 
-    let _ = HttpServer::new(move || {
+    let server = HttpServer::new(move || {
         let web_state = WebState {
             shared_state: Arc::clone(&state),
             config: web_config.clone(),
         };
 
         App::new()
-            .register_data(web::Data::new(web_state))
+            .data(web_state)
             .wrap(Logger::default())
             .wrap(
                 Cors::new()
                     .supports_credentials()
-                    .expose_headers(vec!["cywad-token"]),
+                    .expose_headers(vec!["cywad-token"])
+                    .finish(),
             )
             .wrap(BasicAuth::new(
                 web_config.username.as_ref().map(|v| v.as_ref()),
@@ -548,10 +560,10 @@ pub fn serve(listen: &str, state: SharedState, web_config: WebConfig) {
     .bind(listen)
     .unwrap_or_else(|_| panic!("Can not bind to {}", listen))
     .shutdown_timeout(0)
-    .workers(1)
-    .start();
+    .run();
 
     debug!("Starting http server: {}", listen);
+    actix::spawn(server.map(|_| ()));
     let _ = sys.run();
 }
 

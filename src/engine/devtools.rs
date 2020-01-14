@@ -1,5 +1,8 @@
 use failure::Error;
 
+use failure::{bail, format_err};
+use log::{debug, error, info};
+use serde::{Deserialize, Serialize};
 use serde_json;
 use std::process::Command;
 use std::time::Duration;
@@ -11,27 +14,27 @@ use super::traits::EngineTrait;
 use super::EngineOptions;
 
 use std::net::TcpStream;
-use std::sync::Arc;
 
 pub struct Devtools;
 
 use actix::io::SinkWrite;
 use actix::*;
 use actix_web::client;
-// use actix_web::web;
-// use actix_web::HttpMessage;
-use actix_codec::{AsyncRead, AsyncWrite, Framed};
+use actix_codec::Framed;
 use actix_web::http::Uri;
-use actix_web_actors::ws;
+
 use awc;
 use chrono::prelude::Local;
-use futures::stream::SplitSink;
-use futures::Future;
-use futures::Stream;
+use futures::future::{FutureExt, TryFutureExt};
+use futures::stream::{SplitSink, StreamExt};
+
+use awc::{
+    error::WsProtocolError,
+    ws::{Codec, Frame, Message},
+    BoxedSocket,
+};
 
 const CHECK_PORT_OPEN_TRIES: u64 = 5;
-
-// https://docs.rs/actix/0.7.10/actix/fut/trait.ActorFuture.html
 
 #[derive(Serialize)]
 struct SecurityParams {
@@ -95,25 +98,17 @@ struct DevToolsResponse {
     web_socket_debugger_url: String,
 }
 
-struct WSClient<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    writer: SinkWrite<SplitSink<Framed<T, awc::ws::Codec>>>,
-    // framed: Framed<awc::BoxedSocket, awc::ws::Codec>,
+struct WSClient {
+    writer: SinkWrite<Message, SplitSink<Framed<BoxedSocket, Codec>, Message>>,
     execution_context: ExecutionContext,
     request_id: usize,
     run_later_handle: Option<SpawnHandle>,
     run_interval_handle: Option<SpawnHandle>,
+    to_send: Vec<(String, JsonRpcParams)>,
 }
 
-impl<T: 'static> Actor for WSClient<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
+impl Actor for WSClient {
     type Context = Context<Self>;
-    // type Context = ws::WebsocketContext<Self>;
-
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Actor started");
 
@@ -153,14 +148,17 @@ where
     }
 }
 
-impl<T: 'static> WSClient<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
-    fn send(&mut self, _ctx: &mut Context<Self>, method: &str, params: JsonRpcParams) {
+impl WSClient {
+    fn _send(&mut self) {
+        if self.to_send.is_empty() {
+            return;
+        }
+
+        let (method, params) = self.to_send.remove(0);
+
         match serde_json::to_string(&JsonRpcRequest {
             id: self.request_id,
-            method: method.into(),
+            method,
             params,
         }) {
             Ok(cmd) => {
@@ -188,26 +186,20 @@ where
             }
         }
     }
+    fn send(&mut self, method: &str, params: JsonRpcParams) {
+        self.to_send.push((method.into(), params));
+    }
 
-    fn cleanup(&mut self, ctx: &mut Context<Self>) {
+    fn cleanup(&mut self, _ctx: &mut Context<Self>) {
         // reset current tab
         self.send(
-            ctx,
             "Page.navigate",
             JsonRpcParams::Navigate(NavigateParams {
                 url: "chrome://system/".to_owned(),
             }),
         );
-        self.send(
-            ctx,
-            "Network.clearBrowserCache",
-            JsonRpcParams::WithoutParams,
-        );
-        self.send(
-            ctx,
-            "Network.clearBrowserCookies",
-            JsonRpcParams::WithoutParams,
-        );
+        self.send("Network.clearBrowserCache", JsonRpcParams::WithoutParams);
+        self.send("Network.clearBrowserCookies", JsonRpcParams::WithoutParams);
     }
 
     fn execute_step(&mut self, ctx: &mut Context<Self>) {
@@ -249,13 +241,14 @@ where
         self.run_later_handle = Some(ctx.run_later(
             Duration::from_millis(self.execution_context.config.step_interval.into()),
             |a, ctx| {
+                let do_send = a.to_send.is_empty();
+
                 match a.execution_context.get_step() {
                     Ok(ref step) => {
                         a.execution_context.step_result = StepResult::InWork;
                         match step.kind {
                             StepKind::Screenshot => {
                                 a.send(
-                                    ctx,
                                     "Page.captureScreenshot",
                                     JsonRpcParams::Capture(CaptureParams {
                                         format: "png".into(),
@@ -270,7 +263,6 @@ where
                                 };
 
                                 a.send(
-                                    ctx,
                                     "Runtime.evaluate",
                                     JsonRpcParams::Evaluate(EvaluateParams {
                                         expression: exec.to_string(),
@@ -285,12 +277,19 @@ where
                         }
                     }
                 };
+
+                if do_send {
+                    a._send();
+                }
             },
         ));
     }
 
     fn process_response(&mut self, response: serde_json::Value) -> Result<(), Error> {
         let step = &self.execution_context.get_step()?;
+
+        // send next message
+        self._send();
 
         match step.kind {
             StepKind::Screenshot => {
@@ -370,12 +369,8 @@ where
     }
 }
 
-/// Handle server websocket messages
-// impl StreamHandler<ws::Message, ws::ProtocolError> for WSClient {
-impl<T: 'static> StreamHandler<awc::ws::Frame, ws::ProtocolError> for WSClient<T>
-where
-    T: AsyncRead + AsyncWrite,
-{
+// Handle server websocket messages
+impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
     fn started(&mut self, ctx: &mut Self::Context) {
         info!("Connected");
 
@@ -387,7 +382,6 @@ where
 
         // ignore certificate errors
         self.send(
-            ctx,
             "Security.setIgnoreCertificateErrors",
             JsonRpcParams::Security(SecurityParams { ignore: true }),
         );
@@ -395,7 +389,6 @@ where
         // open url
         let url = self.execution_context.config.url.to_owned();
         self.send(
-            ctx,
             "Page.navigate",
             JsonRpcParams::Navigate(NavigateParams { url }),
         );
@@ -404,7 +397,6 @@ where
         let width = self.execution_context.config.window_width;
         let height = self.execution_context.config.window_height;
         self.send(
-            ctx,
             "Emulation.setDeviceMetricsOverride",
             JsonRpcParams::Metrics(MetricsParams {
                 width,
@@ -420,12 +412,14 @@ where
 
         // start execute first step
         self.execute_step(ctx);
+
+        self._send();
     }
 
     // fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
-    fn handle(&mut self, msg: awc::ws::Frame, ctx: &mut Self::Context) {
+    fn handle(&mut self, msg: Result<awc::ws::Frame, WsProtocolError>, ctx: &mut Self::Context) {
         let result: serde_json::Value = {
-            if let awc::ws::Frame::Text(Some(txt)) = msg {
+            if let Ok(awc::ws::Frame::Text(txt)) = msg {
                 info!("Server: {:?}", txt);
                 match serde_json::from_slice::<serde_json::Value>(&txt) {
                     Ok(v) => {
@@ -591,7 +585,7 @@ impl Devtools {
             state.broadcast(config_index);
         }
 
-        let mut sys = System::new("cywad");
+        let sys = System::new("cywad");
 
         info!(
             "Try connect to {} with timeout {}s",
@@ -600,87 +594,57 @@ impl Devtools {
 
         let client = client::Client::default();
 
-        let request = client
-            .get(&engine_options.endpoint)
-            .timeout(Duration::new(engine_options.http_timeout, 0));
-        // .map_err(|e| format_err!("Failed to build request: {}", e))?;
+        let fut = async move {
+            let request = client
+                .get(&engine_options.endpoint)
+                .timeout(Duration::new(engine_options.http_timeout, 0));
 
-        let state_clone = Arc::clone(&state);
-        let job = request
-            .send()
-            .map_err(|e| {
-                let error_message = format!("Failed to connect to debug port - {}", e);
-                let guard = state_clone
-                    .write()
-                    .map_err(|e| format_err!("RWLock error: {}", e));
-
-                if let Ok(mut state) = guard {
-                    if let Some(item) = state.results.get_mut(config_index) {
-                        item.datetime = Local::now();
-                        item.state = ResultItemState::Err;
-                        item.error = Some(error_message.to_owned());
-                    }
-
-                    state.broadcast(config_index);
-                }
-
-                System::current().stop();
-                format_err!("{}", error_message)
-            })
-            .and_then(|mut response| {
-                info!("Response: {:?}", response);
-                response.json::<Vec<DevToolsResponse>>().map_err(|e| {
+            let mut response = request
+                .send()
+                .map_err(|e| {
+                    System::current().stop();
+                    format_err!("Failed to connect to debug port - {}", e)
+                })
+                .await?;
+            let data = response
+                .json::<Vec<DevToolsResponse>>()
+                .map_err(|e| {
                     System::current().stop();
                     format_err!("Failed to parse response - {}", e)
                 })
-            })
-            .and_then(|data| {
-                info!("Data: {:?}", data);
-                let item = &data[0];
+                .await?;
 
-                let client = awc::Client::new();
+            let item = &data[0];
 
-                client
-                    .ws((&item.web_socket_debugger_url).replace("ws", "http"))
-                    .max_frame_size(engine_options.max_frame_size)
-                    .connect()
-                    .map_err(|e| {
-                        System::current().stop();
-                        format_err!("Failed to connect to websocket - {}", e)
-                    })
-            })
-            .map(|(response, framed)| {
-                info!("response: {:?} framed: {:?}", response, framed);
+            let client = awc::Client::new();
 
-                let (sink, stream) = framed.split();
+            let (_response, framed) = client
+                .ws((&item.web_socket_debugger_url).replace("ws", "http"))
+                .max_frame_size(engine_options.max_frame_size)
+                .connect()
+                .map_err(|e| {
+                    System::current().stop();
+                    format_err!("Failed to connect to websocket - {}", e)
+                })
+                .await?;
 
-                WSClient::create(move |ctx| {
-                    WSClient::add_stream(stream, ctx);
-                    // ctx.add_stream(framed);
-                    WSClient {
-                        writer: SinkWrite::new(sink, ctx),
-                        request_id: 0,
-                        execution_context: ExecutionContext::new(config, config_index, state),
-                        run_later_handle: None,
-                        run_interval_handle: None,
-                    }
-                });
+            let (sink, stream) = framed.split();
+            WSClient::create(move |ctx| {
+                WSClient::add_stream(stream, ctx);
+                WSClient {
+                    writer: SinkWrite::new(sink, ctx),
+                    request_id: 0,
+                    execution_context: ExecutionContext::new(config, config_index, state),
+                    run_later_handle: None,
+                    run_interval_handle: None,
+                    to_send: Vec::new(),
+                }
             });
-        // .map(|(reader, _writer)| {
-        //     info!("create ws actor");
 
-        //     // create ws actor and start
-        //     WSClient::create(move |ctx| {
-        //         // WSClient::add_stream(reader, ctx);
-        //         WSClient {
-        //             // writer,
-        //             request_id: 0,
-        //             execution_context: ExecutionContext::new(config, config_index, state),
-        //         }
-        //     });
-        // });
+            Ok::<(), Error>(())
+        };
 
-        let _ = sys.block_on(job);
+        actix::spawn(fut.map(|_| ()));
 
         let _ = sys.run();
 
@@ -688,7 +652,4 @@ impl Devtools {
     }
 }
 
-impl<T: 'static> actix::io::WriteHandler<awc::error::WsProtocolError> for WSClient<T> where
-    T: AsyncRead + AsyncWrite
-{
-}
+impl actix::io::WriteHandler<WsProtocolError> for WSClient {}

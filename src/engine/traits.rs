@@ -1,7 +1,7 @@
 use failure::Error;
 
 use super::EngineOptions;
-use core::SharedState;
+use crate::core::SharedState;
 
 pub trait EngineTrait {
     fn execute(

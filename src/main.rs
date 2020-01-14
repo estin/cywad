@@ -1,22 +1,6 @@
-#[macro_use]
-extern crate cfg_if;
-#[macro_use]
-extern crate log;
-extern crate env_logger;
-
-#[macro_use]
-extern crate failure;
-
-extern crate toml;
-
-extern crate serde;
-#[macro_use]
-extern crate serde_derive;
-extern crate base64;
-extern crate chrono;
-extern crate clap;
-extern crate serde_json;
-extern crate slug;
+use cfg_if::cfg_if;
+use failure::format_err;
+use log::{error, info};
 
 #[cfg(all(feature = "webkit", feature = "devtools"))]
 compile_error!("features `crate/webkit` and `crate/devtools` are mutually exclusive");
@@ -80,7 +64,9 @@ pub mod engine;
 #[cfg(feature = "png_widget")]
 pub mod widget;
 
-use core::{load_config, ResultItem, SharedState, State, APP_DESCRIPTION, APP_NAME, APP_VERSION};
+use crate::core::{
+    load_config, ResultItem, SharedState, State, APP_DESCRIPTION, APP_NAME, APP_VERSION,
+};
 
 use engine::traits::EngineTrait;
 use engine::EngineOptions;
@@ -350,7 +336,7 @@ fn run() -> Result<(), Error> {
                 .write()
                 .map_err(|e| format_err!("RwLock error: {}", e))?;
             state.results.push(ResultItem::new(&config.name));
-            state.configs.push(config.clone());
+            state.configs.push(config);
         }
 
         let mut engine = engine::new();
