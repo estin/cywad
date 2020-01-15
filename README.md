@@ -38,7 +38,7 @@ $ cargo build --release --features devtools,server,png_widget
 
 ## Example - Rust lang stars on github
 
-Create `github-rust.toml` with next content:
+Create `misc/github-rust.toml` with next content:
 
 ```toml
 
