@@ -25,7 +25,6 @@ use actix_web::HttpServer;
 
 use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
-use futures_util::stream::TryStreamExt;
 
 use cywad::core::{
     validate_config, Config, ResultItem, ResultItemState, ScreenshotItem, SharedState, State,
@@ -654,7 +653,7 @@ async fn test_server() -> Result<(), failure::Error> {
     handle.join().unwrap();
 
     // item
-    let (bytes, resp) = resp.take_body().into_stream().into_future().await;
+    let (bytes, resp) = resp.take_body().into_future().await;
     assert!(bytes.is_some());
     let bytes = bytes.unwrap().unwrap();
     let body = str::from_utf8(&bytes).unwrap();
