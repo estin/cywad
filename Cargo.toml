@@ -1,6 +1,6 @@
 [package]
 name = "cywad"
-version = "0.1.0"
+version = "0.1.1"
 authors = ["Evgeniy Tatarkin <tatarkin.evg@gmail.com>"]
 publish = false
 edition = "2018"
