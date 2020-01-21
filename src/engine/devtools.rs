@@ -19,8 +19,8 @@ pub struct Devtools;
 
 use actix::io::SinkWrite;
 use actix::*;
-use actix_web::client;
 use actix_codec::Framed;
+use actix_web::client;
 use actix_web::http::Uri;
 
 use awc;

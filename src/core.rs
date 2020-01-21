@@ -4,9 +4,11 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::fs::File;
 use std::io::Read;
-use std::str::FromStr;
 use std::sync::mpsc::Sender;
 use std::sync::{Arc, Mutex, RwLock};
+
+#[cfg(feature = "server")]
+use std::str::FromStr;
 
 #[cfg(feature = "server")]
 use cron::Schedule;
@@ -321,7 +323,12 @@ impl ExecutionContext {
         if self.is_done() {
             bail!("[{}] Step #{} out of bounds", self, self.step_index);
         }
-        Ok(self.config.steps[self.step_index].clone())
+        Ok(self
+            .config
+            .steps
+            .get(self.step_index)
+            .ok_or_else(|| format_err!("Step not found by index {}", self.step_index))?
+            .clone())
     }
 
     pub fn start_new_step(&mut self) -> Result<(), Error> {

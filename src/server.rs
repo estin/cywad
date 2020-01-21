@@ -23,19 +23,19 @@ use serde::{Deserialize, Serialize};
 
 use cron::Schedule;
 
+use ::http::header::AUTHORIZATION;
 use base64;
 use bytes::Bytes;
 use futures::future::FutureExt;
 use futures::{Future, Stream};
-use ::http::header::AUTHORIZATION;
 use tokio;
 use tokio::time::delay_for;
 
 use actix;
 use actix_cors::Cors;
+use actix_files as fs;
 use actix_web::http::{ContentEncoding, StatusCode};
 use actix_web::middleware::Logger;
-use actix_files as fs;
 
 use actix_service::{Service, Transform};
 use actix_web::http::header::{HeaderName, HeaderValue};

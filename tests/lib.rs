@@ -10,10 +10,10 @@ use actix_web::*;
 
 use actix_web::{test, web, App};
 
-use std::panic;
-use std::str;
 use std::collections::HashMap;
 use std::net::{Ipv4Addr, SocketAddrV4, TcpListener};
+use std::panic;
+use std::str;
 use std::sync::mpsc;
 use std::sync::mpsc::{Receiver, Sender};
 use std::sync::{Arc, Mutex, RwLock};
