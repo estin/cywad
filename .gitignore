@@ -3,3 +3,4 @@
 *.png
 .vimrc
 .ctags
+*.lock
