@@ -82,7 +82,7 @@ enum JsonRpcParams {
     Capture(CaptureParams),
     Security(SecurityParams),
     Metrics(MetricsParams),
-    WithoutParams,
+    // WithoutParams,
 }
 
 #[derive(Serialize)]
@@ -198,8 +198,9 @@ impl WSClient {
                 url: "chrome://system/".to_owned(),
             }),
         );
-        self.send("Network.clearBrowserCache", JsonRpcParams::WithoutParams);
-        self.send("Network.clearBrowserCookies", JsonRpcParams::WithoutParams);
+        // not supported?
+        // self.send("Network.clearBrowserCache", JsonRpcParams::WithoutParams);
+        // self.send("Network.clearBrowserCookies", JsonRpcParams::WithoutParams);
     }
 
     fn execute_step(&mut self, ctx: &mut Context<Self>) {
