@@ -73,14 +73,14 @@ retry = [ 60, 300, 600 ]
 # Step0. wait before page is ready
 [[steps]]
 kind = "wait"
-exec = """document.querySelector("div.repohead a[aria-label*='starred']") ? true : false"""
+exec = """document.querySelector("a.js-social-count") ? true : false"""
 
 # Step1. get count of stars and paint red border on stars badge
 [[steps]]
 kind = "value"
 key = "stars"
 exec = """(() => {
-    const el = document.querySelector("div.repohead a[aria-label*='starred']");
+    const el = document.querySelector("a.js-social-count");
 
     // paint red border
     el.style.borderColor = "red";
