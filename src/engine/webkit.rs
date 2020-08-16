@@ -72,10 +72,12 @@ fn execute_step(
 
         // check timeout
         let elapsed = (Local::now().timestamp() - context.ts_start) * 1000;
-        debug!(
-            "[{}] Step #{} elapsed {}ms of {}ms",
-            context, context.step_index, elapsed, context.config.step_timeout,
-        );
+        if context.step_index > 0 {
+            debug!(
+                "[{}] Step #{} elapsed {}ms of {}ms",
+                context, context.step_index, elapsed, context.config.step_timeout,
+            );
+        }
         if elapsed > context.config.step_timeout {
             error!("[{}] Step #{} timeout", context, context.step_index);
             context.timeout()?;

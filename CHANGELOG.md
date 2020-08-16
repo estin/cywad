@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- webkit tests
+
 ### Changed
 - use serde with derive feature instead of serde_derive, fmt&clippy 
 - prevent panic if step index out of bounds
