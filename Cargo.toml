@@ -22,14 +22,14 @@ doctest = false
 
 [features]
 default = []
-webkit = ["gtk", "webkit2gtk", "cairo-rs/png", ]
+webkit = ["gtk", "webkit2gtk", "cairo-rs/png", "gio", ]
 devtools = ["tokio", "futures", "futures-util", "actix", "actix-web", "actix-service", "actix-web-actors", "actix-codec", "actix-utils", "awc", ]
 server = ["bytes", "tokio", "futures", "futures-util",  "cron", "actix", "actix-service", "actix-web-actors", "actix-web", "actix-files", "actix-cors", "http", "regex", ]
 png_widget = ["image", "imageproc", "rusttype", "lazy_static", "hex", ]
 
 # for integration tests only
 test_dependencies = [
-    "gtk", "webkit2gtk", "cairo-rs/png",
+    "gtk", "webkit2gtk", "cairo-rs/png", "gio",
     "tokio", "futures", "futures-util", "actix", "actix-web", "actix-service", "actix-web-actors", "actix-codec", "actix-utils", "awc",
     "bytes", "tokio", "cron", "actix", "actix-rt", "actix-service", "actix-web-actors", "actix-web", "actix-files", "actix-cors", "http", "regex",
     "image", "imageproc", "rusttype", "lazy_static", "hex" 
@@ -64,9 +64,11 @@ awc = { version = "1.0.1", optional = true}
 actix-rt = { version = "1.0.0", optional = true }
 
 # webkit
-gtk = { version = "0.5.0", features = ["v3_18"], optional = true }
-webkit2gtk = { version = "0.5.1", optional = true }
-cairo-rs = { version = "0.5.0", optional = true }
+gtk = { version = "0.9.1", features = ["v3_18"], optional = true }
+webkit2gtk = { version = "0.10.0", optional = true }
+cairo-rs = { version = "0.9.1", optional = true }
+gio = { version = "0.9.0", optional = true }
+
 # javascriptcore-rs-sys = { version = "0.1.1", optional = true }
 
 # server

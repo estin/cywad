@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - webkit tests
 
 ### Changed
+- webkit: update gtk to 0.9.1
 - use serde with derive feature instead of serde_derive, fmt&clippy 
 - prevent panic if step index out of bounds
 - don't send Network.clearBrowserCache and Network.clearBrowserCookies

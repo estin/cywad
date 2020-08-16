@@ -4,7 +4,10 @@ use std::sync::{Arc, Mutex};
 
 use cairo::{Context, Format, ImageSurface};
 use gtk;
-use gtk::{Builder, ContainerExt, Continue, GtkWindowExt, Inhibit, WidgetExt, Window, WindowType};
+use gtk::{
+    prelude::BuilderExtManual, prelude::Continue, Builder, ContainerExt, GtkWindowExt, Inhibit,
+    WidgetExt, Window, WindowType,
+};
 use webkit2gtk::{
     CookieManagerExt, SettingsExt, TLSErrorsPolicy, WebContext, WebContextExt, WebView, WebViewExt,
 };
@@ -144,7 +147,7 @@ fn execute_step(
             // let webview_clone = webview.clone();
 
             // webview.run_javascript_with_callback(exec, move |result| {
-            webview.run_javascript(exec, None, move |result| {
+            webview.run_javascript(exec, gio::NONE_CANCELLABLE, move |result| {
                 let mut context = match execution_context_clone.lock() {
                     Ok(context) => context,
                     Err(e) => {
@@ -286,14 +289,12 @@ impl EngineTrait for Webkit {
             Arc::new(Window::new(WindowType::Toplevel))
         } else {
             // ugly hack to create offscreen window - like headless mode
-            let builder = Builder::new_from_string(&glade_template!(
-                config.window_width,
-                config.window_height
-            ));
+            let builder =
+                Builder::from_string(&glade_template!(config.window_width, config.window_height));
             Arc::new(builder.get_object("window").expect("Couldn't get window"))
         };
 
-        let webview = WebView::new_with_context(&context);
+        let webview = WebView::with_context(&context);
         webview.load_uri(&config.url);
         window.add(&webview);
 
