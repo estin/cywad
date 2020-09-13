@@ -1,9 +1,14 @@
 use failure::Error;
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
+
+
 use failure::{bail, format_err};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
-use serde_json;
+
+use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
 
@@ -23,10 +28,13 @@ use actix_codec::Framed;
 use actix_web::client;
 use actix_web::http::Uri;
 
-use awc;
+
 use chrono::prelude::Local;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{SplitSink, StreamExt};
+
+use futures::future::poll_fn;
+use futures::task;
 
 use awc::{
     error::WsProtocolError,
@@ -92,6 +100,14 @@ struct JsonRpcRequest {
     params: JsonRpcParams,
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<serde_json::Value, failure::Error>")]
+struct ClientCmd {
+    method: String,
+    params: JsonRpcParams,
+    timeout: i64, // request timeout in ms
+}
+
 #[derive(Deserialize, Debug)]
 struct DevToolsResponse {
     #[serde(alias = "webSocketDebuggerUrl")]
@@ -100,344 +116,44 @@ struct DevToolsResponse {
 
 struct WSClient {
     writer: SinkWrite<Message, SplitSink<Framed<BoxedSocket, Codec>, Message>>,
-    execution_context: ExecutionContext,
     request_id: usize,
-    run_later_handle: Option<SpawnHandle>,
-    run_interval_handle: Option<SpawnHandle>,
-    to_send: Vec<(String, JsonRpcParams)>,
+    responses: HashMap<usize, serde_json::Value>,
+    request_ready: HashMap<usize, Arc<AtomicBool>>,
 }
 
 impl Actor for WSClient {
     type Context = Context<Self>;
-    fn started(&mut self, ctx: &mut Self::Context) {
-        info!("Actor started");
-
-        // start check timeout
-        self.run_interval_handle = Some(ctx.run_interval(
-            Duration::from_millis(self.execution_context.config.step_interval.into()),
-            |a, ctx| {
-                let context = &mut a.execution_context;
-
-                if context.is_done() {
-                    if let Some(handle) = a.run_interval_handle {
-                        ctx.cancel_future(handle);
-                    }
-                    return;
-                }
-
-                // check timeout
-                let elapsed = (Local::now().timestamp() - context.ts_start) * 1000;
-                debug!(
-                    "[{}] Step #{} elapsed {}ms of {}ms",
-                    context, context.step_index, elapsed, context.config.step_timeout,
-                );
-                if elapsed > context.config.step_timeout {
-                    error!("[{}] Step #{} timeout", context, context.step_index);
-                    if let Err(e) = context.timeout() {
-                        error!("Some error on set state - {}", e);
-                    }
-                    System::current().stop();
-                }
-            },
-        ));
+    fn started(&mut self, _ctx: &mut Self::Context) {
+        info!("WSClient started");
     }
 
     fn stopped(&mut self, _: &mut Self::Context) {
-        info!("actor stoped");
+        info!("WSClient stoped");
         System::current().stop();
-    }
-}
-
-impl WSClient {
-    fn _send(&mut self) {
-        if self.to_send.is_empty() {
-            return;
-        }
-
-        let (method, params) = self.to_send.remove(0);
-
-        match serde_json::to_string(&JsonRpcRequest {
-            id: self.request_id,
-            method,
-            params,
-        }) {
-            Ok(cmd) => {
-                info!("send {} - {}", self.request_id, cmd);
-                self.request_id += 1;
-                if let Err(we) = self.writer.write(awc::ws::Message::Text(cmd)) {
-                    if let Err(se) = self
-                        .execution_context
-                        .error(format!("Write request to ws error - {}", we))
-                    {
-                        error!("Some error on set state - {}", se);
-                    }
-                    System::current().stop();
-                }
-            }
-            Err(e) => {
-                info!("Build request error: {}", e);
-                if let Err(e) = self
-                    .execution_context
-                    .error(format!("Serialize request error - {}", e))
-                {
-                    error!("Some error on set state - {}", e);
-                }
-                System::current().stop();
-            }
-        }
-    }
-    fn send(&mut self, method: &str, params: JsonRpcParams) {
-        self.to_send.push((method.into(), params));
-    }
-
-    fn cleanup(&mut self, _ctx: &mut Context<Self>) {
-        // reset current tab
-        self.send(
-            "Page.navigate",
-            JsonRpcParams::Navigate(NavigateParams {
-                url: "chrome://system/".to_owned(),
-            }),
-        );
-        // not supported?
-        // self.send("Network.clearBrowserCache", JsonRpcParams::WithoutParams);
-        // self.send("Network.clearBrowserCookies", JsonRpcParams::WithoutParams);
-    }
-
-    fn execute_step(&mut self, ctx: &mut Context<Self>) {
-        // check job done and exit
-        if self.execution_context.is_done() {
-            if let Err(e) = self.execution_context.done() {
-                error!("Some error on set state - {}", e);
-            }
-
-            // reset current tab
-            self.cleanup(ctx);
-
-            // wait a litle and stop
-            ctx.run_later(Duration::from_millis(300), |_, _| {
-                System::current().stop();
-            });
-            return;
-        }
-
-        debug!(
-            "[{}] Step #{} try start",
-            self.execution_context, self.execution_context.step_index
-        );
-
-        // prevent double execution
-        if self.execution_context.step_result != StepResult::Idle {
-            return;
-        }
-
-        // prevent double execution
-        if self.execution_context.step_result == StepResult::InWork {
-            debug!(
-                "[{}] Step #{} not done yet...skip... iteration",
-                self.execution_context, self.execution_context.step_index
-            );
-            return;
-        }
-
-        self.run_later_handle = Some(ctx.run_later(
-            Duration::from_millis(self.execution_context.config.step_interval.into()),
-            |a, ctx| {
-                let do_send = a.to_send.is_empty();
-
-                match a.execution_context.get_step() {
-                    Ok(ref step) => {
-                        a.execution_context.step_result = StepResult::InWork;
-                        match step.kind {
-                            StepKind::Screenshot => {
-                                a.send(
-                                    "Page.captureScreenshot",
-                                    JsonRpcParams::Capture(CaptureParams {
-                                        format: "png".into(),
-                                    }),
-                                );
-                            }
-                            StepKind::Wait | StepKind::Value | StepKind::Exec => {
-                                let exec = if let Some(ref exec) = step.exec {
-                                    exec
-                                } else {
-                                    unreachable!("'exec' not defined for step kind");
-                                };
-
-                                a.send(
-                                    "Runtime.evaluate",
-                                    JsonRpcParams::Evaluate(EvaluateParams {
-                                        expression: exec.to_string(),
-                                    }),
-                                );
-                            }
-                        };
-                    }
-                    Err(_) => {
-                        if let Some(handle) = a.run_later_handle {
-                            ctx.cancel_future(handle);
-                        }
-                    }
-                };
-
-                if do_send {
-                    a._send();
-                }
-            },
-        ));
-    }
-
-    fn process_response(&mut self, response: serde_json::Value) -> Result<(), Error> {
-        let step = &self.execution_context.get_step()?;
-
-        // send next message
-        self._send();
-
-        match step.kind {
-            StepKind::Screenshot => {
-                if let Some(data) = response.get("data") {
-                    if let serde_json::Value::String(value) = data {
-                        let mut buffer = Vec::<u8>::new();
-                        base64::decode_config_buf(value, base64::STANDARD, &mut buffer)
-                            .map_err(|e| format_err!("Faild to parse image Base64 - {}", e))?;
-
-                        self.execution_context
-                            .add_screenshot_and_start_new_step(buffer)?;
-                    }
-                }
-            }
-            StepKind::Exec | StepKind::Wait | StepKind::Value => {
-                // some js runtime error
-                if let Some(exception) = response.get("exceptionDetails") {
-                    if let Ok(message) = serde_json::to_string(exception) {
-                        error!(
-                            "[{}] Step #{} error {}",
-                            self.execution_context, self.execution_context.step_index, message
-                        );
-                        self.execution_context.error(message)?;
-                    } else {
-                        self.execution_context.error("Some error".to_owned())?;
-                    }
-                    System::current().stop();
-                    return Ok(());
-                }
-
-                let response: serde_json::Value = if let Some(response) = response.get("result") {
-                    response.clone()
-                } else {
-                    return Ok(());
-                };
-                debug!("Step response: {}", response);
-
-                match step.kind {
-                    StepKind::Exec => {
-                        if let Err(e) = self.execution_context.start_new_step() {
-                            error!("Some error on set state - {}", e);
-                        }
-                    }
-                    StepKind::Wait | StepKind::Value => {
-                        let value = if let Some(value) = response.get("value") {
-                            value.clone()
-                        } else {
-                            return Ok(());
-                        };
-                        debug!("Step evaluation value: {}", value);
-                        match value {
-                            serde_json::Value::Bool(res) => {
-                                if res {
-                                    self.execution_context.start_new_step()?;
-                                }
-                            }
-                            serde_json::Value::Number(res) => {
-                                self.execution_context
-                                    .add_value_and_start_new_step(res.as_f64().ok_or_else(
-                                        || format_err!("Can't retrieve f64 value"),
-                                    )?)?;
-                            }
-                            _ => {
-                                // parse result
-                                self.execution_context.start_new_step()?;
-                            }
-                        }
-                    }
-                    _ => {
-                        unreachable!("yep");
-                    }
-                }
-            }
-        }
-
-        Ok(())
     }
 }
 
 // Handle server websocket messages
 impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
-    fn started(&mut self, ctx: &mut Self::Context) {
-        info!("Connected");
-
-        // start excetion
-        info!("start execution");
-
-        // reset current tab
-        self.cleanup(ctx);
-
-        // ignore certificate errors
-        self.send(
-            "Security.setIgnoreCertificateErrors",
-            JsonRpcParams::Security(SecurityParams { ignore: true }),
-        );
-
-        // open url
-        let url = self.execution_context.config.url.to_owned();
-        self.send(
-            "Page.navigate",
-            JsonRpcParams::Navigate(NavigateParams { url }),
-        );
-
-        // set window size
-        let width = self.execution_context.config.window_width;
-        let height = self.execution_context.config.window_height;
-        self.send(
-            "Emulation.setDeviceMetricsOverride",
-            JsonRpcParams::Metrics(MetricsParams {
-                width,
-                height,
-                mobile: false,
-                device_scale_factor: 1.0,
-                screen_orientation: ScreenOrientation {
-                    angle: 0,
-                    otype: "portraitPrimary".into(),
-                },
-            }),
-        );
-
-        // start execute first step
-        self.execute_step(ctx);
-
-        self._send();
+    fn started(&mut self, _ctx: &mut Self::Context) {
+        info!("WSClient Connected");
     }
 
-    // fn handle(&mut self, msg: ws::Message, ctx: &mut Self::Context) {
-    fn handle(&mut self, msg: Result<awc::ws::Frame, WsProtocolError>, ctx: &mut Self::Context) {
-        let result: serde_json::Value = {
+    fn handle(&mut self, msg: Result<awc::ws::Frame, WsProtocolError>, _ctx: &mut Self::Context) {
+        let _result: serde_json::Value = {
             if let Ok(awc::ws::Frame::Text(txt)) = msg {
                 info!("Server: {:?}", txt);
                 match serde_json::from_slice::<serde_json::Value>(&txt) {
                     Ok(v) => {
                         if let Some(response_id) = v.get("id") {
-                            if response_id != self.request_id - 1 {
-                                debug!(
-                                    "response id {} but expects {}. skip",
-                                    response_id,
-                                    self.request_id - 1,
-                                );
-                                return;
-                            }
-
-                            info!("Context - idle");
-                            self.execution_context.step_result = StepResult::Idle;
+                            let response_id = response_id.as_u64().unwrap() as usize;
 
                             if let Some(result) = v.get("result") {
+                                self.responses.insert(response_id, result.clone());
+                                self.request_ready
+                                    .get_mut(&response_id)
+                                    .unwrap()
+                                    .store(true, Ordering::Relaxed);
                                 result.clone()
                             } else {
                                 return;
@@ -455,20 +171,10 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
                 return;
             }
         };
-
-        if !self.execution_context.is_done() {
-            if let Err(e) = self.process_response(result) {
-                error!("Some error on ws response proccessing - {}", e);
-            }
-            self.execute_step(ctx);
-        }
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
-        info!("Server disconnected");
-        if let Err(e) = self.execution_context.error("Server disconnected".into()) {
-            error!("Some error on set state - {}", e);
-        }
+        info!("WSClient. Disconnected");
         ctx.stop();
     }
 }
@@ -630,17 +336,227 @@ impl Devtools {
                 .await?;
 
             let (sink, stream) = framed.split();
-            WSClient::create(move |ctx| {
+
+            let ws_client = WSClient::create(move |ctx| {
                 WSClient::add_stream(stream, ctx);
                 WSClient {
                     writer: SinkWrite::new(sink, ctx),
                     request_id: 0,
-                    execution_context: ExecutionContext::new(config, config_index, state),
-                    run_later_handle: None,
-                    run_interval_handle: None,
-                    to_send: Vec::new(),
+                    // execution_context: ExecutionContext::new(config, config_index, state),
+                    responses: HashMap::new(),
+                    request_ready: HashMap::new(),
                 }
             });
+
+            let mut execution_context = ExecutionContext::new(config, config_index, state);
+            let _ = ws_client
+                .send(ClientCmd {
+                    method: "Page.navigate".to_owned(),
+                    params: JsonRpcParams::Navigate(NavigateParams {
+                        url: "chrome://system/".to_owned(),
+                    }),
+                    timeout: execution_context.config.step_timeout,
+                })
+                .await?;
+
+            // ignore certificate errors
+            let _ = ws_client
+                .send(ClientCmd {
+                    method: "Security.setIgnoreCertificateErrors".to_owned(),
+                    params: JsonRpcParams::Security(SecurityParams { ignore: true }),
+                    timeout: execution_context.config.step_timeout,
+                })
+                .await?;
+
+            // open url
+            let url = execution_context.config.url.to_owned();
+            let _ = ws_client
+                .send(ClientCmd {
+                    method: "Page.navigate".to_owned(),
+                    params: JsonRpcParams::Navigate(NavigateParams { url }),
+                    timeout: execution_context.config.step_timeout,
+                })
+                .await?;
+
+            // set window size
+            let width = execution_context.config.window_width;
+            let height = execution_context.config.window_height;
+            let _ = ws_client
+                .send(ClientCmd {
+                    method: "Emulation.setDeviceMetricsOverride".to_owned(),
+                    params: JsonRpcParams::Metrics(MetricsParams {
+                        width,
+                        height,
+                        mobile: false,
+                        device_scale_factor: 1.0,
+                        screen_orientation: ScreenOrientation {
+                            angle: 0,
+                            otype: "portraitPrimary".into(),
+                        },
+                    }),
+                    timeout: execution_context.config.step_timeout,
+                })
+                .await?;
+
+            // start process
+            loop {
+                let elapsed = (Local::now().timestamp() - execution_context.ts_start) * 1000;
+                debug!(
+                    "[{}] Step #{} elapsed {}ms of {}ms",
+                    execution_context,
+                    execution_context.step_index,
+                    elapsed,
+                    execution_context.config.step_timeout,
+                );
+                if elapsed > execution_context.config.step_timeout {
+                    error!(
+                        "[{}] Step #{} timeout",
+                        execution_context, execution_context.step_index
+                    );
+                    if let Err(e) = execution_context.timeout() {
+                        error!("Some error on set state - {}", e);
+                    }
+                    System::current().stop();
+                }
+
+                let step = execution_context.get_step()?;
+                execution_context.step_result = StepResult::InWork;
+                let response = match step.kind {
+                    StepKind::Screenshot => {
+                        ws_client
+                            .send(ClientCmd {
+                                method: "Page.captureScreenshot".to_owned(),
+                                params: JsonRpcParams::Capture(CaptureParams {
+                                    format: "png".into(),
+                                }),
+                                timeout: execution_context.config.step_timeout,
+                            })
+                            .await?
+                    }
+                    StepKind::Wait => {
+                        let exec = if let Some(ref exec) = step.exec {
+                            exec
+                        } else {
+                            unreachable!("'exec' not defined for step kind");
+                        };
+                        ws_client
+                            .send(ClientCmd {
+                                method: "Runtime.evaluate".to_owned(),
+                                params: JsonRpcParams::Evaluate(EvaluateParams {
+                                    expression: exec.to_string(),
+                                }),
+                                timeout: execution_context.config.step_timeout,
+                            })
+                            .await?
+                    }
+                    StepKind::Value | StepKind::Exec => {
+                        let exec = if let Some(ref exec) = step.exec {
+                            exec
+                        } else {
+                            unreachable!("'exec' not defined for step kind");
+                        };
+                        ws_client
+                            .send(ClientCmd {
+                                method: "Runtime.evaluate".to_owned(),
+                                params: JsonRpcParams::Evaluate(EvaluateParams {
+                                    expression: exec.to_string(),
+                                }),
+                                timeout: execution_context.config.step_timeout,
+                            })
+                            .await?
+                    }
+                };
+
+                let response = response.unwrap();
+
+                match step.kind {
+                    StepKind::Screenshot => {
+                        if let Some(data) = response.get("data") {
+                            if let serde_json::Value::String(value) = data {
+                                let mut buffer = Vec::<u8>::new();
+                                base64::decode_config_buf(value, base64::STANDARD, &mut buffer)
+                                    .map_err(|e| {
+                                        format_err!("Faild to parse image Base64 - {}", e)
+                                    })?;
+
+                                execution_context.add_screenshot_and_start_new_step(buffer)?;
+                            }
+                        }
+                    }
+                    StepKind::Exec | StepKind::Wait | StepKind::Value => {
+                        // some js runtime error
+                        if let Some(exception) = response.get("exceptionDetails") {
+                            if let Ok(message) = serde_json::to_string(exception) {
+                                error!(
+                                    "[{}] Step #{} error {}",
+                                    execution_context, execution_context.step_index, message
+                                );
+                                execution_context.error(message)?;
+                            } else {
+                                execution_context.error("Some error".to_owned())?;
+                            }
+                            System::current().stop();
+                            return Ok(());
+                        }
+
+                        let response: serde_json::Value =
+                            if let Some(response) = response.get("result") {
+                                response.clone()
+                            } else {
+                                return Ok(());
+                            };
+                        debug!("Step response: {}", response);
+
+                        match step.kind {
+                            StepKind::Exec => {
+                                execution_context.start_new_step()?;
+                            }
+                            StepKind::Wait | StepKind::Value => {
+                                let value = if let Some(value) = response.get("value") {
+                                    value.clone()
+                                } else {
+                                    return Ok(());
+                                };
+                                debug!("Step evaluation value: {}", value);
+                                match value {
+                                    serde_json::Value::Bool(res) => {
+                                        if res {
+                                            execution_context.start_new_step()?;
+                                        }
+                                    }
+                                    serde_json::Value::Number(res) => {
+                                        execution_context.add_value_and_start_new_step(
+                                            res.as_f64().ok_or_else(|| {
+                                                format_err!("Can't retrieve f64 value")
+                                            })?,
+                                        )?;
+                                    }
+                                    _ => {
+                                        // parse result
+                                        execution_context.start_new_step()?;
+                                    }
+                                }
+                            }
+                            _ => {
+                                unreachable!("yep");
+                            }
+                        }
+                    }
+                }
+
+                if execution_context.is_done() {
+                    execution_context.done()?;
+                    break;
+                }
+
+                // sleep
+                tokio::time::delay_for(std::time::Duration::from_millis(
+                    execution_context.config.step_interval as u64,
+                ))
+                .await;
+            }
+
+            System::current().stop();
 
             Ok::<(), Error>(())
         };
@@ -654,3 +570,67 @@ impl Devtools {
 }
 
 impl actix::io::WriteHandler<WsProtocolError> for WSClient {}
+
+impl Handler<ClientCmd> for WSClient {
+    type Result = ResponseActFuture<Self, Result<serde_json::Value, failure::Error>>;
+
+    fn handle(&mut self, msg: ClientCmd, _ctx: &mut Context<Self>) -> Self::Result {
+        let ts_start = Local::now().timestamp();
+        let timeout = msg.timeout;
+        let request_id = self.request_id;
+        let is_ready_slot = Arc::new(AtomicBool::new(false));
+        let is_ready = Arc::clone(&is_ready_slot);
+        self.request_ready.insert(request_id, is_ready_slot);
+
+        match serde_json::to_string(&JsonRpcRequest {
+            id: self.request_id,
+            method: msg.method,
+            params: msg.params,
+        }) {
+            Ok(cmd) => {
+                info!("send {} - {}", self.request_id, cmd);
+                self.request_id += 1;
+                if let Err(we) = self.writer.write(awc::ws::Message::Text(cmd)) {
+                    error!("Error on send messages {}", we);
+                }
+            }
+            Err(e) => {
+                error!("Build request error: {}", e);
+            }
+        };
+
+        Box::new(
+            poll_fn(move |_| -> task::Poll<Result<bool, failure::Error>> {
+                if is_ready.load(Ordering::Relaxed) {
+                    task::Poll::Ready(Ok(true))
+                } else {
+                    let elapsed = (Local::now().timestamp() - ts_start) * 1000;
+                    if elapsed > timeout {
+                        task::Poll::Ready(Err(format_err!(
+                            "WSClient request #{} timeout",
+                            request_id
+                        )))
+                    } else {
+                        task::Poll::Pending
+                    }
+                }
+            })
+            .into_actor(self)
+            .map(move |_result, actor, _ctx| {
+                if actor.request_ready.remove(&request_id).is_none() {
+                    error!(
+                        "Request #{} is't present in request ready slots",
+                        request_id
+                    );
+                };
+                match actor.responses.remove(&request_id) {
+                    None => Err(format_err!(
+                        "Request #{} is't present in responses slots",
+                        request_id
+                    )),
+                    Some(result) => Ok(result),
+                }
+            }),
+        )
+    }
+}

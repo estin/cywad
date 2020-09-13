@@ -1,4 +1,4 @@
-use actix_rt;
+
 use cron::Schedule;
 use failure::format_err;
 
@@ -343,9 +343,9 @@ fn test_engine_success() -> Result<(), failure::Error> {
     let state = state.read().expect("RwLock error");
     let result = &state.results[0];
     assert!(result.is_ok());
-    assert_eq!(result.values[0].value, 100.0 as f64);
+    assert_eq!(result.values[0].value, 100.0);
     assert_eq!(result.values[0].level, Some("green".to_string()));
-    assert_eq!(result.values[1].value, 200.0 as f64);
+    assert_eq!(result.values[1].value, 200.0);
     assert_eq!(result.values[1].level, Some("yellow".to_string()));
     assert_eq!(result.screenshots.len(), 1);
     Ok(())

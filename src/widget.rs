@@ -2,7 +2,7 @@ use failure::Error;
 
 use chrono::prelude::{DateTime, Local};
 
-use hex;
+
 use image::{png, ColorType, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rusttype::{point, Font, FontCollection, Scale};

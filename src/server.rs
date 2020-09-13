@@ -1,4 +1,4 @@
-use std;
+
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -12,10 +12,10 @@ use std::task::{Context, Poll};
 use std::borrow::Cow;
 use std::time::{Duration, Instant};
 
-use serde_json;
+
 
 use cfg_if::cfg_if;
-use chrono;
+
 use chrono::prelude::{DateTime, Local};
 use failure::format_err;
 use log::{debug, error, info};
@@ -24,14 +24,14 @@ use serde::{Deserialize, Serialize};
 use cron::Schedule;
 
 use ::http::header::AUTHORIZATION;
-use base64;
+
 use bytes::Bytes;
 use futures::future::FutureExt;
 use futures::{Future, Stream};
-use tokio;
+
 use tokio::time::delay_for;
 
-use actix;
+
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::http::{ContentEncoding, StatusCode};
@@ -51,7 +51,7 @@ use crate::core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_S
 
 cfg_if! {
     if #[cfg(feature = "png_widget")] {
-        use hex;
+        
         use crate::widget::PNGWidget;
     }
 }

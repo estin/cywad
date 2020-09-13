@@ -22,7 +22,7 @@ pub const APP_DESCRIPTION: Option<&'static str> = option_env!("CARGO_PKG_DESCRIP
 pub const APP_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 pub const SCHEDULER_SLEEP: u64 = 60; // each minute
 
-use toml;
+
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppInfo {
