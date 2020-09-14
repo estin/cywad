@@ -321,6 +321,11 @@ impl Devtools {
                 })
                 .await?;
 
+            if data.len() == 0 {
+                System::current().stop();
+                bail!("Devtools empty response");
+            }
+
             let item = &data[0];
 
             let client = awc::Client::new();
