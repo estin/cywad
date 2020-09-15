@@ -33,7 +33,8 @@ use chrono::prelude::Local;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{SplitSink, StreamExt};
 
-use futures::future::poll_fn;
+use tokio::time;
+use futures::future::{poll_fn};
 use futures::task;
 
 use awc::{
@@ -90,7 +91,7 @@ enum JsonRpcParams {
     Capture(CaptureParams),
     Security(SecurityParams),
     Metrics(MetricsParams),
-    // WithoutParams,
+    WithoutParams,
 }
 
 #[derive(Serialize)]
@@ -282,6 +283,7 @@ impl Devtools {
 
                 // reset state
                 item.state = ResultItemState::InWork;
+                item.datetime = Local::now();
                 item.values.clear();
                 item.screenshots.clear();
                 item.steps_done = Some(0);
@@ -360,6 +362,23 @@ impl Devtools {
                     params: JsonRpcParams::Navigate(NavigateParams {
                         url: "chrome://system/".to_owned(),
                     }),
+                    timeout: execution_context.config.step_timeout,
+                })
+                .await?;
+
+            // not supported?
+            // let _ = ws_client
+            //     .send(ClientCmd {
+            //         method: "Network.clearBrowserCache".to_owned(),
+            //         params: JsonRpcParams::WithoutParams,
+            //         timeout: execution_context.config.step_timeout,
+            //     })
+            //     .await?;
+
+            let _ = ws_client
+                .send(ClientCmd {
+                    method: "Network.clearBrowserCookies".to_owned(),
+                    params: JsonRpcParams::WithoutParams,
                     timeout: execution_context.config.step_timeout,
                 })
                 .await?;
@@ -605,7 +624,7 @@ impl Handler<ClientCmd> for WSClient {
         };
 
         Box::new(
-            poll_fn(move |_| -> task::Poll<Result<bool, failure::Error>> {
+            poll_fn(move | context | -> task::Poll<Result<bool, failure::Error>> {
                 if is_ready.load(Ordering::Relaxed) {
                     task::Poll::Ready(Ok(true))
                 } else {
@@ -616,6 +635,12 @@ impl Handler<ClientCmd> for WSClient {
                             request_id
                         )))
                     } else {
+                        let waker_clone = context.waker().clone();
+                        tokio::spawn(async move {
+                            let delay = timeout as u64 / 10 as u64;
+                            time::delay_for(Duration::from_millis(delay)).await;
+                            waker_clone.wake_by_ref();
+                        });
                         task::Poll::Pending
                     }
                 }

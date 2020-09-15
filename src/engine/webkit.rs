@@ -266,6 +266,7 @@ impl EngineTrait for Webkit {
 
                 // reset state
                 item.state = ResultItemState::InWork;
+                item.datetime = Local::now();
                 item.values.clear();
                 item.screenshots.clear();
                 item.steps_done = Some(0);

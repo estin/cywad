@@ -162,10 +162,7 @@ $ cargo run --release --features devtools,server -- serve -p misc --listen 127.0
 
 Get info
 ```bash
-$ curl http://127.0.0.1:8000/api/items | jq
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-100   495  100   495    0     0   483k      0 --:--:-- --:--:-- --:--:--  483k
+$ curl -s http://127.0.0.1:8000/api/items | jq
 {
   "info": {
     "name": "cywad",

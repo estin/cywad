@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: ws client actor logic 
 
 ### Fixed
+- update result item datetime on start processing 
+- ws request timeout
 - don't hang on worth devtools config response 
 
 ## [0.1.2] - 2020-08-16
