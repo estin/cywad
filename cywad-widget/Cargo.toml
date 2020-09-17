@@ -1,0 +1,24 @@
+[package]
+name = "cywad-widget"
+version = "0.1.0"
+authors = ["Evgeniy Tatarkin <tatarkin.evg@gmail.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cywad-core = { path = "../cywad-core", features = ["server"] }
+
+cfg-if = "0.1.10"
+log = "0.4.11"
+env_logger = "0.7.1"
+failure = "0.1.8"
+
+# png widget
+# image = { version = "0.23.8", optional = true }
+image = { version = "0.20.1" }
+imageproc = { version = "0.16.0" }
+rusttype = { version = "0.5" }
+lazy_static = { version = "1.1.0" }
+hex = { version = "0.3.2" }
+chrono = { version = "0.4.6", features = ["serde"]}

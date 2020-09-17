@@ -219,13 +219,13 @@ $ chromium -remote-debugging-address=0.0.0.0 --remote-debugging-port=9222 --head
 ```
 
 ```bash
-$ cargo test --features=devtools,server,png_widget,test_dependencies -- --nocapture
+$ cargo test --features=devtools,server,png_widget -- --nocapture
 ```
 
 ## Testing `webkit2gtk` engine
 
 ```bash
-$ cargo test --features=webkit,server,png_widget,test_dependencies -- --nocapture
+$ cargo test --features=webkit,server,png_widget -- --nocapture
 ``` 
 
 ## License

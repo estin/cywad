@@ -22,8 +22,6 @@ pub const APP_DESCRIPTION: Option<&'static str> = option_env!("CARGO_PKG_DESCRIP
 pub const APP_VERSION: Option<&'static str> = option_env!("CARGO_PKG_VERSION");
 pub const SCHEDULER_SLEEP: u64 = 60; // each minute
 
-
-
 #[derive(Debug, Serialize, Deserialize)]
 pub struct AppInfo {
     pub name: String,
@@ -462,4 +460,45 @@ impl ExecutionContext {
 
         Ok(())
     }
+}
+
+#[derive(Clone)]
+#[cfg(feature = "webkit")]
+pub struct EngineOptions {
+    pub keep_open: bool,
+}
+
+#[derive(Clone)]
+#[cfg(feature = "devtools")]
+pub struct EngineOptions {
+    pub command: Option<String>,
+    pub endpoint: String,
+    pub http_timeout: u64,
+    pub max_frame_size: usize,
+}
+
+impl Default for EngineOptions {
+    #[cfg(feature = "webkit")]
+    fn default() -> Self {
+        EngineOptions { keep_open: false }
+    }
+
+    #[cfg(feature = "devtools")]
+    fn default() -> Self {
+        EngineOptions {
+            command: None,
+            endpoint: "http://127.0.0.1:9222/json".into(),
+            http_timeout: 5,
+            max_frame_size: 3 * 1024 * 1024,
+        }
+    }
+}
+
+pub trait EngineTrait {
+    fn execute(
+        &mut self,
+        index: usize,
+        state: SharedState,
+        engine_options: EngineOptions,
+    ) -> Result<(), Error>;
 }

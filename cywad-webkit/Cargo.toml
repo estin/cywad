@@ -1,0 +1,24 @@
+[package]
+name = "cywad-webkit"
+version = "0.1.0"
+authors = ["Evgeniy Tatarkin <tatarkin.evg@gmail.com>"]
+edition = "2018"
+workspace = ".."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+cywad-core = { path="../cywad-core", features = ["webkit"] }
+
+cfg-if = "0.1.10"
+log = "0.4.11"
+env_logger = "0.7.1"
+failure = "0.1.8"
+
+chrono = { version = "0.4.6", features = ["serde"]}
+
+# webkit
+gtk = { version = "0.9.1", features = ["v3_18"] }
+webkit2gtk = { version = "0.10.0" }
+cairo-rs = { version = "0.9.1", features = ["png"] }
+gio = { version = "0.9.0" }

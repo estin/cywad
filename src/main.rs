@@ -5,71 +5,15 @@ use log::{error, info};
 #[cfg(all(feature = "webkit", feature = "devtools"))]
 compile_error!("features `crate/webkit` and `crate/devtools` are mutually exclusive");
 
-cfg_if! {
-    if #[cfg(feature = "webkit")] {
-        extern crate cairo;
-        extern crate gtk;
-        extern crate webkit2gtk;
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "devtools")] {
-        extern crate actix_web_actors;
-        extern crate actix_codec;
-        extern crate actix_utils;
-        extern crate awc;
-    }
-}
-
-cfg_if! {
-    if #[cfg(any(feature = "devtools", feature = "server"))] {
-        extern crate futures;
-        extern crate actix;
-        extern crate actix_web;
-        extern crate actix_service;
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "server")] {
-        extern crate bytes;
-        extern crate cron;
-        extern crate http;
-        extern crate tokio;
-        extern crate regex;
-        extern crate actix_cors;
-        extern crate actix_files;
-    }
-}
-
-cfg_if! {
-    if #[cfg(feature = "png_widget")] {
-        extern crate image;
-        extern crate imageproc;
-        extern crate rusttype;
-        extern crate hex;
-
-        #[macro_use]
-        extern crate lazy_static;
-    }
-}
-
 use failure::Error;
 use std::sync::{Arc, RwLock};
 
-pub mod core;
 pub mod engine;
 
-#[cfg(feature = "png_widget")]
-pub mod widget;
-
-use crate::core::{
-    load_config, ResultItem, SharedState, State, APP_DESCRIPTION, APP_NAME, APP_VERSION,
+use cywad_core::{
+    load_config, Config, EngineOptions, EngineTrait, ResultItem, SharedState, State,
+    APP_DESCRIPTION, APP_NAME, APP_VERSION,
 };
-
-use engine::traits::EngineTrait;
-use engine::EngineOptions;
 
 cfg_if! {
     if #[cfg(feature = "server")] {
@@ -79,7 +23,6 @@ cfg_if! {
         use std::sync::Mutex;
         use std::thread;
 
-        pub mod server;
     }
 }
 
@@ -394,7 +337,7 @@ fn run() -> Result<(), Error> {
                 tx_vec: Some(Vec::new()),
             }));
 
-            let mut configs_by_filename: Vec<(String, core::Config)> = Vec::new();
+            let mut configs_by_filename: Vec<(String, Config)> = Vec::new();
 
             // read and validate configs
             for file in fs::read_dir(path)? {
@@ -456,17 +399,17 @@ fn run() -> Result<(), Error> {
             // start scheduler thread
             let state_clone = Arc::clone(&state);
             thread::spawn(move || {
-                server::populate_initial_state(&state_clone);
-                server::run_scheduler(&state_clone, false);
+                cywad_server::populate_initial_state(&state_clone);
+                cywad_server::run_scheduler(&state_clone, false);
             });
 
-            let mut web_config = server::WebConfig::default();
+            let mut web_config = cywad_server::WebConfig::default();
             web_config.username = matches.value_of("username").map(String::from);
             web_config.password = matches.value_of("password").map(String::from);
             web_config.static_files_path = matches.value_of("path_to_static").map(String::from);
 
             // serve from main thread
-            server::serve(
+            cywad_server::serve(
                 matches.value_of("listen").unwrap_or("127.0.0.1:5000"),
                 state,
                 web_config,

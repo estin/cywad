@@ -2,7 +2,7 @@ use failure::Error;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-
+use std::cmp;
 
 use failure::{bail, format_err};
 use log::{debug, error, info};
@@ -12,11 +12,10 @@ use std::collections::HashMap;
 use std::process::Command;
 use std::time::Duration;
 
-use super::super::core::{
-    ExecutionContext, PreviouResultItemState, ResultItemState, SharedState, StepKind, StepResult,
+use cywad_core::{
+    EngineOptions, EngineTrait, ExecutionContext, PreviouResultItemState, ResultItemState,
+    SharedState, StepKind, StepResult,
 };
-use super::traits::EngineTrait;
-use super::EngineOptions;
 
 use std::net::TcpStream;
 
@@ -28,14 +27,13 @@ use actix_codec::Framed;
 use actix_web::client;
 use actix_web::http::Uri;
 
-
 use chrono::prelude::Local;
 use futures::future::{FutureExt, TryFutureExt};
 use futures::stream::{SplitSink, StreamExt};
 
-use tokio::time;
-use futures::future::{poll_fn};
+use futures::future::poll_fn;
 use futures::task;
+use tokio::time;
 
 use awc::{
     error::WsProtocolError,
@@ -141,37 +139,27 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
     }
 
     fn handle(&mut self, msg: Result<awc::ws::Frame, WsProtocolError>, _ctx: &mut Self::Context) {
-        let _result: serde_json::Value = {
-            if let Ok(awc::ws::Frame::Text(txt)) = msg {
-                info!("Server: {:?}", txt);
-                match serde_json::from_slice::<serde_json::Value>(&txt) {
-                    Ok(v) => {
-                        if let Some(response_id) = v.get("id") {
-                            let response_id = response_id.as_u64().unwrap() as usize;
-
+        if let Ok(awc::ws::Frame::Text(txt)) = msg {
+            info!("Server: {:?}", txt);
+            match serde_json::from_slice::<serde_json::Value>(&txt) {
+                Ok(v) => {
+                    if let Some(response_id) = v.get("id") {
+                        if let Some(response_id) = response_id.as_u64() {
+                            let response_id = response_id as usize;
                             if let Some(result) = v.get("result") {
-                                self.responses.insert(response_id, result.clone());
-                                self.request_ready
-                                    .get_mut(&response_id)
-                                    .unwrap()
-                                    .store(true, Ordering::Relaxed);
-                                result.clone()
-                            } else {
-                                return;
+                                if let Some(slot) = self.request_ready.get_mut(&response_id) {
+                                    self.responses.insert(response_id, result.clone());
+                                    slot.store(true, Ordering::Relaxed);
+                                }
                             }
-                        } else {
-                            return;
                         }
                     }
-                    Err(e) => {
-                        error!("Some error on ws response parse - {}", e);
-                        return;
-                    }
                 }
-            } else {
-                return;
+                Err(e) => {
+                    error!("Some error on ws response parse - {}", e);
+                }
             }
-        };
+        }
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
@@ -323,7 +311,7 @@ impl Devtools {
                 })
                 .await?;
 
-            if data.len() == 0 {
+            if data.is_empty() {
                 System::current().stop();
                 bail!("Devtools empty response");
             }
@@ -491,7 +479,7 @@ impl Devtools {
                     }
                 };
 
-                let response = response.unwrap();
+                let response = response?;
 
                 match step.kind {
                     StepKind::Screenshot => {
@@ -624,7 +612,7 @@ impl Handler<ClientCmd> for WSClient {
         };
 
         Box::new(
-            poll_fn(move | context | -> task::Poll<Result<bool, failure::Error>> {
+            poll_fn(move |context| -> task::Poll<Result<bool, failure::Error>> {
                 if is_ready.load(Ordering::Relaxed) {
                     task::Poll::Ready(Ok(true))
                 } else {
@@ -637,7 +625,7 @@ impl Handler<ClientCmd> for WSClient {
                     } else {
                         let waker_clone = context.waker().clone();
                         tokio::spawn(async move {
-                            let delay = timeout as u64 / 10 as u64;
+                            let delay = cmp::max(timeout as u64 / 10 as u64, 100);
                             time::delay_for(Duration::from_millis(delay)).await;
                             waker_clone.wake_by_ref();
                         });

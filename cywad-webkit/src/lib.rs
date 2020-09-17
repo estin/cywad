@@ -3,7 +3,6 @@ use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
 use cairo::{Context, Format, ImageSurface};
-use gtk;
 use gtk::{
     prelude::BuilderExtManual, prelude::Continue, Builder, ContainerExt, GtkWindowExt, Inhibit,
     WidgetExt, Window, WindowType,
@@ -12,12 +11,11 @@ use webkit2gtk::{
     CookieManagerExt, SettingsExt, TLSErrorsPolicy, WebContext, WebContextExt, WebView, WebViewExt,
 };
 
-use super::super::core::{
-    ExecutionContext, PreviouResultItemState, ResultItemState, SharedState, StepKind, StepResult,
-};
-use super::traits::EngineTrait;
-use super::EngineOptions;
 use chrono::prelude::Local;
+use cywad_core::{
+    EngineOptions, EngineTrait, ExecutionContext, PreviouResultItemState, ResultItemState,
+    SharedState, StepKind, StepResult,
+};
 
 use failure::format_err;
 use log::{debug, error, info, warn};
@@ -199,7 +197,6 @@ fn execute_step(
                                     None => {
                                         error!("Value empty");
                                         context.step_result = StepResult::Error;
-                                        return;
                                     }
                                 };
                             }

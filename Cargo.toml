@@ -1,9 +1,18 @@
 [package]
 name = "cywad"
-version = "0.1.1"
+version = "0.2.0"
 authors = ["Evgeniy Tatarkin <tatarkin.evg@gmail.com>"]
 publish = false
 edition = "2018"
+
+[workspace]
+members = [
+  "cywad-core",
+  "cywad-webkit",
+  "cywad-devtools",
+  "cywad-server",
+  "cywad-widget",
+]
 
 [lib]
 name = "cywad"
@@ -22,72 +31,44 @@ doctest = false
 
 [features]
 default = []
-webkit = ["gtk", "webkit2gtk", "cairo-rs/png", "gio", ]
-devtools = ["tokio", "futures", "futures-util", "actix", "actix-web", "actix-service", "actix-web-actors", "actix-codec", "actix-utils", "awc", ]
-server = ["bytes", "tokio", "futures", "futures-util",  "cron", "actix", "actix-service", "actix-web-actors", "actix-web", "actix-files", "actix-cors", "http", "regex", ]
-png_widget = ["image", "imageproc", "rusttype", "lazy_static", "hex", ]
-
-# for integration tests only
-test_dependencies = [
-    "gtk", "webkit2gtk", "cairo-rs/png", "gio",
-    "tokio", "futures", "futures-util", "actix", "actix-web", "actix-service", "actix-web-actors", "actix-codec", "actix-utils", "awc",
-    "bytes", "tokio", "cron", "actix", "actix-rt", "actix-service", "actix-web-actors", "actix-web", "actix-files", "actix-cors", "http", "regex",
-    "image", "imageproc", "rusttype", "lazy_static", "hex" 
-]
+webkit = ["cywad-webkit"]
+devtools = ["cywad-devtools" ]
+server = ["cywad-server"]
+png_widget = ["cywad-server/png_widget"]
 
 [dependencies]
+
 cfg-if = "0.1.10"
 log = "0.4.11"
 env_logger = "0.7.1"
 failure = "0.1.8"
 clap = "2.33.3"
 toml = "0.5.6"
-
+base64 = "0.10.0"
 serde = { version = "1.0.115", features = ["derive"] }
 serde_json = "1.0.57"
-
-slug = "0.1.4"
-base64 = "0.10.0"
 chrono = { version = "0.4.6", features = ["serde"]}
 
-# devtools + server
-futures = { version = "0.3.1", optional = true }
-futures-util = { version = "0.3.1", optional = true }
-tokio = { version = "0.2.9", optional = true }
-actix = { version = "0.9.0", optional = true }
-actix-web = { version = "2.0.0", optional = true } 
-actix-service = { version = "1.0.2", optional = true }
-actix-web-actors = { version = "2.0.0", optional = true } 
-actix-codec = { version = "0.2.0", optional = true }
-actix-utils = { version = "1.0.6", optional = true }
-awc = { version = "1.0.1", optional = true}
-actix-rt = { version = "1.0.0", optional = true }
+cywad-core = { path = "./cywad-core" }
+cywad-webkit = { path = "./cywad-webkit", optional = true }
+cywad-devtools = { path = "./cywad-devtools", optional = true }
+cywad-server = { path = "./cywad-server", optional = true }
 
-# webkit
-gtk = { version = "0.9.1", features = ["v3_18"], optional = true }
-webkit2gtk = { version = "0.10.0", optional = true }
-cairo-rs = { version = "0.9.1", optional = true }
-gio = { version = "0.9.0", optional = true }
-
-# javascriptcore-rs-sys = { version = "0.1.1", optional = true }
-
-# server
-cron = { version = "0.6.0", optional = true }
-bytes = { version = "0.5.3", optional = true }
-actix-cors = { version = "0.2.0", optional = true } 
-actix-files = { version = "0.2.1", optional = true }
-
-http = { version = "0.2.0", optional = true }
-regex = { version = "1.0.6", optional = true }  
- 
-# png widget
-# image = { version = "0.23.8", optional = true }
-# imageproc = { version = "0.21.0", optional = true }
-image = { version = "0.20.1", optional = true }
-imageproc = { version = "0.16.0", optional = true }
-rusttype = { version = "0.5", optional = true }
-lazy_static = { version = "1.1.0", optional = true }
-hex = { version = "0.3.2", optional = true }
 
 [dev-dependencies]
 lazy_static = "1.1.0"
+actix-rt = { version = "1.0.0" }
+futures = { version = "0.3.1" }
+futures-util = { version = "0.3.1" }
+tokio = { version = "0.2.9" }
+actix = { version = "0.9.0" }
+actix-web = { version = "2.0.0" } 
+actix-service = { version = "1.0.2" }
+actix-web-actors = { version = "2.0.0" } 
+actix-codec = { version = "0.2.0" }
+actix-utils = { version = "1.0.6" }
+awc = { version = "1.0.1" }
+cron = { version = "0.6.0" }
+bytes = { version = "0.5.3" }
+actix-cors = { version = "0.2.0" } 
+actix-files = { version = "0.2.1"}

@@ -1,13 +1,15 @@
+#[macro_use]
+extern crate lazy_static;
+
 use failure::Error;
 
 use chrono::prelude::{DateTime, Local};
-
 
 use image::{png, ColorType, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
 use rusttype::{point, Font, FontCollection, Scale};
 
-use crate::core::{AppInfo, ResultItemState, SharedState};
+use cywad_core::{AppInfo, ResultItemState, SharedState};
 
 use failure::format_err;
 

@@ -1,4 +1,3 @@
-
 use std::rc::Rc;
 use std::str::FromStr;
 use std::sync::mpsc::{channel, Receiver, TryRecvError};
@@ -11,8 +10,6 @@ use std::task::{Context, Poll};
 
 use std::borrow::Cow;
 use std::time::{Duration, Instant};
-
-
 
 use cfg_if::cfg_if;
 
@@ -31,7 +28,6 @@ use futures::{Future, Stream};
 
 use tokio::time::delay_for;
 
-
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::http::{ContentEncoding, StatusCode};
@@ -47,12 +43,11 @@ use actix_web::*;
 
 use regex::Regex;
 
-use crate::core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
+use cywad_core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
 
 cfg_if! {
     if #[cfg(feature = "png_widget")] {
-        
-        use crate::widget::PNGWidget;
+        use cywad_widget::PNGWidget;
     }
 }
 
@@ -216,8 +211,8 @@ where
                             return Box::pin(async move {
                                 let mut res = fut.await?;
                                 res.headers_mut().insert(
-                                    HeaderName::from_lowercase(b"cywad-token").unwrap(),
-                                    HeaderValue::from_str(&cywad_token).unwrap(),
+                                    HeaderName::from_lowercase(b"cywad-token").map_err(|e| format_err!("create header name: {}", e))?,
+                                    HeaderValue::from_str(&cywad_token).map_err(|e| format_err!("create header value: {}", e))?,
                                 );
                                 Ok(res)
                             });

@@ -1,4 +1,3 @@
-
 use cron::Schedule;
 use failure::format_err;
 
@@ -26,13 +25,10 @@ use actix_web::HttpServer;
 use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
 
-use cywad::core::{
-    validate_config, Config, ResultItem, ResultItemState, ScreenshotItem, SharedState, State,
+use cywad_core::{
+    validate_config, Config, EngineOptions, EngineTrait, ResultItem, ResultItemState,
+    ScreenshotItem, SharedState, State,
 };
-use cywad::engine::traits::EngineTrait;
-use cywad::engine::EngineOptions;
-
-use cywad::server;
 
 #[derive(Debug)]
 struct MockServerState {
@@ -560,18 +556,18 @@ async fn test_server() -> Result<(), failure::Error> {
         state.configs.push(config.clone());
     }
 
-    let mut web_config = server::WebConfig::default();
+    let mut web_config = cywad_server::WebConfig::default();
     web_config.sse_hb_duration = Duration::from_millis(10);
     web_config.sse_wakeup_duration = Duration::from_millis(10);
 
     let mut srv = test::init_service({
-        let web_state = server::WebState {
+        let web_state = cywad_server::WebState {
             shared_state: Arc::clone(&state),
             config: web_config.clone(),
         };
         App::new()
             .data(web_state)
-            .configure(|cfg| server::configure_app(cfg, web_config.clone()))
+            .configure(|cfg| cywad_server::configure_app(cfg, web_config.clone()))
     })
     .await;
 
@@ -584,8 +580,8 @@ async fn test_server() -> Result<(), failure::Error> {
     // items
     let req = test::TestRequest::get().uri("/api/items").to_request();
     let bytes = test::read_response(&mut srv, req).await;
-    let body = str::from_utf8(&bytes).unwrap();
-    let data: server::ItemsResponse = serde_json::from_str(body).unwrap();
+    let body = str::from_utf8(&bytes)?;
+    let data: cywad_server::ItemsResponse = serde_json::from_str(body)?;
     debug!("items {:?}", data.items);
     assert_eq!(data.items.len(), 1);
     let item = &data.items[0];
@@ -618,8 +614,8 @@ async fn test_server() -> Result<(), failure::Error> {
     // items
     let req = test::TestRequest::get().uri("/api/items").to_request();
     let bytes = test::read_response(&mut srv, req).await;
-    let body = str::from_utf8(&bytes).unwrap();
-    let data: server::ItemsResponse = serde_json::from_str(body).unwrap();
+    let body = str::from_utf8(&bytes)?;
+    let data: cywad_server::ItemsResponse = serde_json::from_str(body)?;
     // let data: server::ItemsResponse = test::read_response_json(&mut srv, req);
     debug!("items {:?}", data.items);
     assert_eq!(data.items.len(), 1);
@@ -638,37 +634,37 @@ async fn test_server() -> Result<(), failure::Error> {
     assert!(resp.status().is_success());
 
     {
-        let state = state_clone.read().unwrap();
-        let tx_vec = state.tx_vec.as_ref().unwrap();
+        let state = state_clone.read().map_err(|e| format_err!("State read error {}", e))?;
+        let tx_vec = state.tx_vec.as_ref().ok_or_else(|| format_err!("tx vec is None"))?;
         assert_eq!(tx_vec.len(), 1);
     }
 
-    let handle = thread::spawn(move || {
-        let state = state_clone.read().unwrap();
-        for ref mut tx in state.tx_vec.as_ref().unwrap().iter() {
-            let sender = tx.lock().unwrap();
-            sender.send(item_clone.clone()).unwrap();
+    let handle = thread::spawn(move || -> Result<(), failure::Error> {
+        let state = state_clone.read().map_err(|e| format_err!("State error {}", e))?;
+        let v = state.tx_vec.as_ref().ok_or_else(|| format_err!("tx vec is None"))?;
+        for ref mut tx in v.iter() {
+            let sender = tx.lock().map_err(|e| format_err!("Lock error {}", e))?;
+            sender.send(item_clone.clone())?;
         }
+        Ok(())
     });
-    handle.join().unwrap();
+    let _ = handle.join().map_err(|_| format_err!("Join error"))?;
 
     // item
     let (bytes, resp) = resp.take_body().into_future().await;
-    assert!(bytes.is_some());
-    let bytes = bytes.unwrap().unwrap();
-    let body = str::from_utf8(&bytes).unwrap();
-    let payload = body.split("data: ").nth(1).unwrap();
-    let data: server::ItemPush = serde_json::from_str(payload).unwrap();
+    let bytes = bytes.ok_or_else(|| format_err!("bytes empty"))?.map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+    let body = str::from_utf8(&bytes)?;
+    let payload = body.split("data: ").nth(1).ok_or_else(|| format_err!("Empty payload"))?;
+    let data: cywad_server::ItemPush = serde_json::from_str(payload)?;
     assert_eq!(item.slug, data.item.slug);
 
     // heartbeat
     let (bytes, _) = resp.into_future().await;
-    assert!(bytes.is_some());
-    let bytes = bytes.unwrap().unwrap();
-    let body = str::from_utf8(&bytes).unwrap();
+    let bytes = bytes.ok_or_else(|| format_err!("bytes empty"))?.map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+    let body = str::from_utf8(&bytes)?;
     assert!(body.contains("event: heartbeat"));
-    let payload = body.split("data: ").nth(1).unwrap();
-    let _heartbeat: server::HeartBeat = serde_json::from_str(payload).unwrap();
+    let payload = body.split("data: ").nth(1).ok_or_else(|| format_err!("Empty payload"))?;
+    let _heartbeat: cywad_server::HeartBeat = serde_json::from_str(payload)?;
 
     // widget
     let req = test::TestRequest::get()
@@ -694,22 +690,22 @@ async fn test_basic_auth() -> Result<(), failure::Error> {
         tx_vec: None,
     }));
 
-    let mut web_config = server::WebConfig::default();
+    let mut web_config = cywad_server::WebConfig::default();
     web_config.username = Some("test".to_owned());
     web_config.password = Some("test".to_owned());
 
     let mut srv = test::init_service({
-        let web_state = server::WebState {
+        let web_state = cywad_server::WebState {
             shared_state: Arc::clone(&state),
             config: web_config.clone(),
         };
         App::new()
             .data(web_state)
-            .wrap(server::BasicAuth::new(
+            .wrap(cywad_server::BasicAuth::new(
                 web_config.username.as_ref().map(|v| v.as_ref()),
                 web_config.password.as_ref().map(|v| v.as_ref()),
             ))
-            .configure(|cfg| server::configure_app(cfg, web_config.clone()))
+            .configure(|cfg| cywad_server::configure_app(cfg, web_config.clone()))
     })
     .await;
 
@@ -833,7 +829,7 @@ fn test_retry() {
     }
 
     // attempt == 1
-    server::populate_initial_state(&state_clone);
+    cywad_server::populate_initial_state(&state_clone);
     {
         let mut state = state_clone.write().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::InQueue);
@@ -843,7 +839,7 @@ fn test_retry() {
     }
 
     // retry attempt index == 0
-    server::process_retry(&state_clone);
+    cywad_server::process_retry(&state_clone);
     {
         let mut state = state_clone.write().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::InQueue);
@@ -852,7 +848,7 @@ fn test_retry() {
     }
 
     // retry attempt index == 1
-    server::process_retry(&state_clone);
+    cywad_server::process_retry(&state_clone);
     {
         let mut state = state_clone.write().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::InQueue);
@@ -861,7 +857,7 @@ fn test_retry() {
     }
 
     // retry attempt index == 2
-    server::process_retry(&state_clone);
+    cywad_server::process_retry(&state_clone);
     {
         let mut state = state_clone.write().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::InQueue);
@@ -870,7 +866,7 @@ fn test_retry() {
     }
 
     // retry limit reached
-    server::process_retry(&state_clone);
+    cywad_server::process_retry(&state_clone);
     {
         let state = state_clone.read().expect("RwLock error");
         assert_eq!(state.results[0].state, ResultItemState::Err);
@@ -878,7 +874,7 @@ fn test_retry() {
 }
 
 #[test]
-fn test_cron() {
+fn test_cron() -> Result<(), failure::Error> {
     let _ = env_logger::try_init();
 
     let expression = "0   *   *     *       *  *  *";
@@ -921,10 +917,10 @@ fn test_cron() {
         state.configs.push(config);
     }
 
-    server::populate_initial_state(&state_clone);
-    server::run_scheduler(&state_clone, true);
+    cywad_server::populate_initial_state(&state_clone);
+    cywad_server::run_scheduler(&state_clone, true);
     let now = chrono::Local::now();
-    let schedule = Schedule::from_str(expression).unwrap();
+    let schedule = Schedule::from_str(expression).map_err(|e| format_err!("Cron error {}", e))?;
     {
         let state = state_clone.read().expect("RwLock error");
         debug!(
@@ -936,6 +932,7 @@ fn test_cron() {
             state.results[0].scheduled,
             schedule.after(&now).take(1).next()
         );
-        assert!(state.results[0].scheduled.unwrap() > now);
+        assert!(state.results[0].scheduled.ok_or_else(|| format_err!("Schedule empty"))? > now);
+        Ok(())
     }
 }

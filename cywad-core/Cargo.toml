@@ -1,0 +1,29 @@
+[package]
+name = "cywad-core"
+version = "0.1.0"
+authors = ["Evgeniy Tatarkin <tatarkin.evg@gmail.com>"]
+edition = "2018"
+workspace = ".."
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[features]
+default = []
+webkit = []
+devtools = []
+server = ["cron"]
+
+
+[dependencies]
+serde = { version = "1.0.115", features = ["derive"] }
+serde_json = "1.0.57"
+
+slug = "0.1.4"
+chrono = { version = "0.4.6", features = ["serde"]}
+cfg-if = "0.1.10"
+log = "0.4.11"
+env_logger = "0.7.1"
+failure = "0.1.8"
+toml = "0.5.6"
+
+cron = { version = "0.6.0", optional = true }
