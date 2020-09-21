@@ -726,9 +726,8 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                         let fire = match state.results.get_mut(i) {
                             Some(mut result) => {
                                 let scheduled = Some(datetime);
-                                result.scheduled = scheduled;
 
-                                if result.state == ResultItemState::InQueue {
+                                if result.scheduled.is_some() && result.state == ResultItemState::InQueue {
                                     continue;
                                 }
 
@@ -737,11 +736,13 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                                     result.state = ResultItemState::InQueue;
                                     result.datetime = now;
                                     result.attempt_count = None;
+                                    result.scheduled = scheduled;
                                     true
                                 } else {
                                     result.scheduled = scheduled;
                                     false
                                 }
+
                             }
                             None => false,
                         };
