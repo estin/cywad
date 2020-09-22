@@ -14,7 +14,7 @@ use std::time::{Duration, Instant};
 use cfg_if::cfg_if;
 
 use chrono::prelude::{DateTime, Local};
-use failure::format_err;
+// use failure::format_err;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
@@ -50,6 +50,8 @@ cfg_if! {
         use cywad_widget::PNGWidget;
     }
 }
+
+// impl actix_web::error::ResponseError for failure::Error {}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct HeartBeat {
@@ -211,8 +213,10 @@ where
                             return Box::pin(async move {
                                 let mut res = fut.await?;
                                 res.headers_mut().insert(
-                                    HeaderName::from_lowercase(b"cywad-token").map_err(|e| format_err!("create header name: {}", e))?,
-                                    HeaderValue::from_str(&cywad_token).map_err(|e| format_err!("create header value: {}", e))?,
+                                    HeaderName::from_lowercase(b"cywad-token")
+                                        .map_err(actix_web::error::ErrorInternalServerError)?,
+                                    HeaderValue::from_str(&cywad_token)
+                                        .map_err(actix_web::error::ErrorInternalServerError)?,
                                 );
                                 Ok(res)
                             });
@@ -246,7 +250,7 @@ async fn items(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpR
     let state = web_state
         .shared_state
         .read()
-        .map_err(|e| format_err!("RWLock error: {}", e))?;
+        .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
     let data = ItemsResponse {
         info: AppInfo::default(),
@@ -270,7 +274,7 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
         let state = web_state
             .shared_state
             .read()
-            .map_err(|e| format_err!("RWLock error: {}", e))?;
+            .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
         match state.results.iter().position(|item| item.slug == slug) {
             Some(i) => i,
@@ -285,7 +289,7 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
         let mut state = web_state
             .shared_state
             .write()
-            .map_err(|e| format_err!("RWLock error: {}", e))?;
+            .map_err(|_| actix_web::error::ErrorInternalServerError("Write state error"))?;
 
         match state.results.get_mut(index) {
             Some(result) => match result.state {
@@ -306,32 +310,34 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
     // fire
     if state_changed {
         // broadcast
-        {
-            let mut state = web_state
-                .shared_state
-                .write()
-                .map_err(|e| format_err!("RWLock error: {}", e))?;
-
+        if let Ok(mut state) = web_state.shared_state.write() {
             state.broadcast(index);
+        } else {
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Write state error",
+            ));
         }
 
         // send to the worker
-        let state = web_state
-            .shared_state
-            .read()
-            .map_err(|e| format_err!("RWLock error: {}", e))?;
-
-        if let Some(ref tx) = state.tx {
-            let tx = tx.lock().map_err(|e| format_err!("Sender error: {}", e))?;
-            tx.send(index)
-                .map_err(|e| format_err!("Sende error: {}", e))?;
+        if let Ok(state) = web_state.shared_state.read() {
+            if let Some(ref tx) = state.tx {
+                let tx = tx
+                    .lock()
+                    .map_err(|_| actix_web::error::ErrorInternalServerError("TX lock error"))?;
+                tx.send(index)
+                    .map_err(|_| actix_web::error::ErrorInternalServerError("TX send error"))?;
+            }
+        } else {
+            return Err(actix_web::error::ErrorInternalServerError(
+                "Read state error",
+            ));
         }
     }
 
     let state = web_state
         .shared_state
         .read()
-        .map_err(|e| format_err!("RWLock error: {}", e))?;
+        .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
     let data = ItemPush {
         server_datetime: now,
@@ -357,7 +363,7 @@ async fn screenshot(req: HttpRequest, web_state: web::Data<WebState>) -> Result<
         let state = web_state
             .shared_state
             .read()
-            .map_err(|e| format_err!("RWLock error: {}", e))?;
+            .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
         match state.results.iter().find(|item| item.slug == slug) {
             Some(item) => match item.screenshots.iter().find(|item| item.uri == uri) {
@@ -384,7 +390,7 @@ async fn sse(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpRes
         let mut state = web_state
             .shared_state
             .write()
-            .map_err(|e| format_err!("RWLock error: {}", e))?;
+            .map_err(|_| actix_web::error::ErrorInternalServerError("State write error"))?;
 
         if let Some(ref mut tx_vec) = state.tx_vec {
             tx_vec.push(Mutex::new(tx));
@@ -489,7 +495,8 @@ async fn png_widget(req: HttpRequest, web_state: web::Data<WebState>) -> Result<
         background: {
             if let Some(background) = match_info.get("bg") {
                 let color =
-                    hex::decode(background).map_err(|e| format_err!("hex decode error: {}", e))?;
+                    hex::decode(background).map_err(actix_web::error::ErrorInternalServerError)?;
+
                 if color.len() != 4 {
                     return Ok(HttpResponse::build(StatusCode::BAD_REQUEST)
                         .body("Invalid background hex color"));
@@ -505,7 +512,11 @@ async fn png_widget(req: HttpRequest, web_state: web::Data<WebState>) -> Result<
 
     Ok(HttpResponse::build(StatusCode::OK)
         .content_type("image/png")
-        .body(widget.render(&web_state.shared_state)?))
+        .body(
+            widget
+                .render(&web_state.shared_state)
+                .map_err(actix_web::error::ErrorInternalServerError)?,
+        ))
 }
 
 pub fn configure_app(cfg: &mut web::ServiceConfig, web_config: WebConfig) {
@@ -727,7 +738,9 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                             Some(mut result) => {
                                 let scheduled = Some(datetime);
 
-                                if result.scheduled.is_some() && result.state == ResultItemState::InQueue {
+                                if result.scheduled.is_some()
+                                    && result.state == ResultItemState::InQueue
+                                {
                                     continue;
                                 }
 
@@ -742,7 +755,6 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                                     result.scheduled = scheduled;
                                     false
                                 }
-
                             }
                             None => false,
                         };

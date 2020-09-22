@@ -1,8 +1,8 @@
 use failure::Error;
 
+use std::cmp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::cmp;
 
 use failure::{bail, format_err};
 use log::{debug, error, info};

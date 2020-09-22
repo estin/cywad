@@ -634,14 +634,24 @@ async fn test_server() -> Result<(), failure::Error> {
     assert!(resp.status().is_success());
 
     {
-        let state = state_clone.read().map_err(|e| format_err!("State read error {}", e))?;
-        let tx_vec = state.tx_vec.as_ref().ok_or_else(|| format_err!("tx vec is None"))?;
+        let state = state_clone
+            .read()
+            .map_err(|e| format_err!("State read error {}", e))?;
+        let tx_vec = state
+            .tx_vec
+            .as_ref()
+            .ok_or_else(|| format_err!("tx vec is None"))?;
         assert_eq!(tx_vec.len(), 1);
     }
 
     let handle = thread::spawn(move || -> Result<(), failure::Error> {
-        let state = state_clone.read().map_err(|e| format_err!("State error {}", e))?;
-        let v = state.tx_vec.as_ref().ok_or_else(|| format_err!("tx vec is None"))?;
+        let state = state_clone
+            .read()
+            .map_err(|e| format_err!("State error {}", e))?;
+        let v = state
+            .tx_vec
+            .as_ref()
+            .ok_or_else(|| format_err!("tx vec is None"))?;
         for ref mut tx in v.iter() {
             let sender = tx.lock().map_err(|e| format_err!("Lock error {}", e))?;
             sender.send(item_clone.clone())?;
@@ -652,18 +662,28 @@ async fn test_server() -> Result<(), failure::Error> {
 
     // item
     let (bytes, resp) = resp.take_body().into_future().await;
-    let bytes = bytes.ok_or_else(|| format_err!("bytes empty"))?.map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+    let bytes = bytes
+        .ok_or_else(|| format_err!("bytes empty"))?
+        .map_err(|e| format_err!("Unwrap bytes error {}", e))?;
     let body = str::from_utf8(&bytes)?;
-    let payload = body.split("data: ").nth(1).ok_or_else(|| format_err!("Empty payload"))?;
+    let payload = body
+        .split("data: ")
+        .nth(1)
+        .ok_or_else(|| format_err!("Empty payload"))?;
     let data: cywad_server::ItemPush = serde_json::from_str(payload)?;
     assert_eq!(item.slug, data.item.slug);
 
     // heartbeat
     let (bytes, _) = resp.into_future().await;
-    let bytes = bytes.ok_or_else(|| format_err!("bytes empty"))?.map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+    let bytes = bytes
+        .ok_or_else(|| format_err!("bytes empty"))?
+        .map_err(|e| format_err!("Unwrap bytes error {}", e))?;
     let body = str::from_utf8(&bytes)?;
     assert!(body.contains("event: heartbeat"));
-    let payload = body.split("data: ").nth(1).ok_or_else(|| format_err!("Empty payload"))?;
+    let payload = body
+        .split("data: ")
+        .nth(1)
+        .ok_or_else(|| format_err!("Empty payload"))?;
     let _heartbeat: cywad_server::HeartBeat = serde_json::from_str(payload)?;
 
     // widget
@@ -932,7 +952,12 @@ fn test_cron() -> Result<(), failure::Error> {
             state.results[0].scheduled,
             schedule.after(&now).take(1).next()
         );
-        assert!(state.results[0].scheduled.ok_or_else(|| format_err!("Schedule empty"))? > now);
+        assert!(
+            state.results[0]
+                .scheduled
+                .ok_or_else(|| format_err!("Schedule empty"))?
+                > now
+        );
         Ok(())
     }
 }
