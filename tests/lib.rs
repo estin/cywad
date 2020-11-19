@@ -1,5 +1,5 @@
 use cron::Schedule;
-use failure::format_err;
+use anyhow::{Error, anyhow};
 
 use lazy_static::lazy_static;
 use log::debug;
@@ -54,11 +54,11 @@ lazy_static! {
     };
 }
 
-fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
+fn start_server(html: &str) -> Result<MockServerInfo, Error> {
     {
         let mut state = MOCK_SERVER_STATE
             .lock()
-            .map_err(|e| format_err!("Lock error: {}", e))?;
+            .map_err(|e| anyhow!("Lock error: {}", e))?;
 
         if !state.is_running {
             state.is_running = true;
@@ -127,14 +127,14 @@ fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
             });
 
             // wait until server starts
-            state.base_url = Some(rx.recv().map_err(|e| format_err!("rx recv error: {}", e))?);
+            state.base_url = Some(rx.recv().map_err(|e| anyhow!("rx recv error: {}", e))?);
         }
     }
 
     {
         let mut state = MOCK_SERVER_STATE
             .lock()
-            .map_err(|e| format_err!("Lock error: {}", e))?;
+            .map_err(|e| anyhow!("Lock error: {}", e))?;
         let test_index = state.test_index;
         state
             .content_by_test_id
@@ -143,11 +143,11 @@ fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
     {
         let state = MOCK_SERVER_STATE
             .lock()
-            .map_err(|e| format_err!("Lock error: {}", e))?;
+            .map_err(|e| anyhow!("Lock error: {}", e))?;
         let url = state
             .base_url
             .as_ref()
-            .ok_or_else(|| format_err!("Base url empty"))?;
+            .ok_or_else(|| anyhow!("Base url empty"))?;
         let info = MockServerInfo {
             url: format!("{}?index={}", url, state.test_index),
         };
@@ -156,7 +156,7 @@ fn start_server(html: &str) -> Result<MockServerInfo, failure::Error> {
 }
 
 #[test]
-fn test_validate_config() -> Result<(), failure::Error> {
+fn test_validate_config() -> Result<(), Error> {
     let config_step_without_exec = r#"
         url = "mock"
         name = "test"
@@ -169,7 +169,7 @@ fn test_validate_config() -> Result<(), failure::Error> {
         kind = "wait"
     "#;
     let config: Config = toml::from_str(&config_step_without_exec)
-        .map_err(|e| format_err!("on load config - {}", e))?;
+        .map_err(|e| anyhow!("on load config - {}", e))?;
 
     debug!("Config: {:#?}", config);
     assert_eq!(
@@ -190,7 +190,7 @@ fn test_validate_config() -> Result<(), failure::Error> {
         exec = "return 1;"
     "#;
     let config: Config = toml::from_str(&config_value_without_key)
-        .map_err(|e| format_err!("on load config - {}", e))?;
+        .map_err(|e| anyhow!("on load config - {}", e))?;
 
     debug!("Config: {:#?}", config);
     assert_eq!(
@@ -213,7 +213,7 @@ fn test_validate_config() -> Result<(), failure::Error> {
     "#;
 
     let config: Config =
-        toml::from_str(&config_invalid_cron).map_err(|e| format_err!("on load config - {}", e))?;
+        toml::from_str(&config_invalid_cron).map_err(|e| anyhow!("on load config - {}", e))?;
 
     debug!("Config: {:#?}", config);
     assert_eq!(
@@ -225,14 +225,14 @@ fn test_validate_config() -> Result<(), failure::Error> {
 
 // Work around testing for gtk and single thread restriction
 #[test]
-fn test_engine_summary() -> Result<(), failure::Error> {
+fn test_engine_summary() -> Result<(), Error> {
     test_engine_success()?;
     test_engine_error()?;
     test_engine_timeout()?;
     Ok(())
 }
 
-fn test_engine_success() -> Result<(), failure::Error> {
+fn test_engine_success() -> Result<(), Error> {
     let _ = env_logger::try_init();
     let info = start_server(include_str!("data/index.html"))?;
 
@@ -312,7 +312,7 @@ fn test_engine_success() -> Result<(), failure::Error> {
     "#;
 
     let mut config: Config =
-        toml::from_str(&config_toml).map_err(|e| format_err!("on load config - {}", e))?;
+        toml::from_str(&config_toml).map_err(|e| anyhow!("on load config - {}", e))?;
     config.url = info.url;
 
     debug!("Config: {:#?}", config);
@@ -347,7 +347,7 @@ fn test_engine_success() -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn test_engine_timeout() -> Result<(), failure::Error> {
+fn test_engine_timeout() -> Result<(), Error> {
     let _ = env_logger::try_init();
     let info = start_server(include_str!("data/index.html"))?;
 
@@ -377,7 +377,7 @@ fn test_engine_timeout() -> Result<(), failure::Error> {
     "#;
 
     let mut config: Config =
-        toml::from_str(&config_toml).map_err(|e| format_err!("on load config - {}", e))?;
+        toml::from_str(&config_toml).map_err(|e| anyhow!("on load config - {}", e))?;
     config.url = info.url;
 
     debug!("Config: {:#?}", config);
@@ -410,7 +410,7 @@ fn test_engine_timeout() -> Result<(), failure::Error> {
     Ok(())
 }
 
-fn test_engine_error() -> Result<(), failure::Error> {
+fn test_engine_error() -> Result<(), Error> {
     let _ = env_logger::try_init();
     let info = start_server(include_str!("data/index.html"))?;
 
@@ -439,7 +439,7 @@ fn test_engine_error() -> Result<(), failure::Error> {
     "#;
 
     let mut config: Config =
-        toml::from_str(&config_toml).map_err(|e| format_err!("on load config - {}", e))?;
+        toml::from_str(&config_toml).map_err(|e| anyhow!("on load config - {}", e))?;
     config.url = info.url;
 
     debug!("Config: {:#?}", config);
@@ -473,7 +473,7 @@ fn test_engine_error() -> Result<(), failure::Error> {
 
 #[cfg(any(feature = "devtools", feature = "server"))]
 #[actix_rt::test]
-async fn test_server() -> Result<(), failure::Error> {
+async fn test_server() -> Result<(), Error> {
     let config_toml = r#"
         url = "mock"
         name = "some-test-name"
@@ -527,7 +527,7 @@ async fn test_server() -> Result<(), failure::Error> {
     "#;
 
     let config: Config =
-        toml::from_str(&config_toml).map_err(|e| format_err!("on load config - {}", e))?;
+        toml::from_str(&config_toml).map_err(|e| anyhow!("on load config - {}", e))?;
 
     let (tx, job_rx): (Sender<usize>, _) = mpsc::channel();
 
@@ -543,7 +543,7 @@ async fn test_server() -> Result<(), failure::Error> {
     {
         let mut state = state_clone
             .write()
-            .map_err(|e| format_err!("lock error - {}", e))?;
+            .map_err(|e| anyhow!("lock error - {}", e))?;
 
         let mut result_item = ResultItem::new(&config.name);
         result_item.slug = "test".to_string();
@@ -573,7 +573,7 @@ async fn test_server() -> Result<(), failure::Error> {
 
     // info
     let req = test::TestRequest::get().uri("/api/info").to_request();
-    // .map_err(|e| format_err!("actix error: {}", e))
+    // .map_err(|e| anyhow!("actix error: {}", e))
     let resp = test::call_service(&mut srv, req).await;
     assert!(resp.status().is_success());
 
@@ -636,54 +636,54 @@ async fn test_server() -> Result<(), failure::Error> {
     {
         let state = state_clone
             .read()
-            .map_err(|e| format_err!("State read error {}", e))?;
+            .map_err(|e| anyhow!("State read error {}", e))?;
         let tx_vec = state
             .tx_vec
             .as_ref()
-            .ok_or_else(|| format_err!("tx vec is None"))?;
+            .ok_or_else(|| anyhow!("tx vec is None"))?;
         assert_eq!(tx_vec.len(), 1);
     }
 
-    let handle = thread::spawn(move || -> Result<(), failure::Error> {
+    let handle = thread::spawn(move || -> Result<(), Error> {
         let state = state_clone
             .read()
-            .map_err(|e| format_err!("State error {}", e))?;
+            .map_err(|e| anyhow!("State error {}", e))?;
         let v = state
             .tx_vec
             .as_ref()
-            .ok_or_else(|| format_err!("tx vec is None"))?;
+            .ok_or_else(|| anyhow!("tx vec is None"))?;
         for ref mut tx in v.iter() {
-            let sender = tx.lock().map_err(|e| format_err!("Lock error {}", e))?;
+            let sender = tx.lock().map_err(|e| anyhow!("Lock error {}", e))?;
             sender.send(item_clone.clone())?;
         }
         Ok(())
     });
-    let _ = handle.join().map_err(|_| format_err!("Join error"))?;
+    let _ = handle.join().map_err(|_| anyhow!("Join error"))?;
 
     // item
     let (bytes, resp) = resp.take_body().into_future().await;
     let bytes = bytes
-        .ok_or_else(|| format_err!("bytes empty"))?
-        .map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+        .ok_or_else(|| anyhow!("bytes empty"))?
+        .map_err(|e| anyhow!("Unwrap bytes error {}", e))?;
     let body = str::from_utf8(&bytes)?;
     let payload = body
         .split("data: ")
         .nth(1)
-        .ok_or_else(|| format_err!("Empty payload"))?;
+        .ok_or_else(|| anyhow!("Empty payload"))?;
     let data: cywad_server::ItemPush = serde_json::from_str(payload)?;
     assert_eq!(item.slug, data.item.slug);
 
     // heartbeat
     let (bytes, _) = resp.into_future().await;
     let bytes = bytes
-        .ok_or_else(|| format_err!("bytes empty"))?
-        .map_err(|e| format_err!("Unwrap bytes error {}", e))?;
+        .ok_or_else(|| anyhow!("bytes empty"))?
+        .map_err(|e| anyhow!("Unwrap bytes error {}", e))?;
     let body = str::from_utf8(&bytes)?;
     assert!(body.contains("event: heartbeat"));
     let payload = body
         .split("data: ")
         .nth(1)
-        .ok_or_else(|| format_err!("Empty payload"))?;
+        .ok_or_else(|| anyhow!("Empty payload"))?;
     let _heartbeat: cywad_server::HeartBeat = serde_json::from_str(payload)?;
 
     // widget
@@ -702,7 +702,7 @@ async fn test_server() -> Result<(), failure::Error> {
 }
 
 #[actix_rt::test]
-async fn test_basic_auth() -> Result<(), failure::Error> {
+async fn test_basic_auth() -> Result<(), Error> {
     let state: SharedState = Arc::new(RwLock::new(State {
         configs: Vec::new(),
         results: Vec::new(),
@@ -894,7 +894,7 @@ fn test_retry() {
 }
 
 #[test]
-fn test_cron() -> Result<(), failure::Error> {
+fn test_cron() -> Result<(), Error> {
     let _ = env_logger::try_init();
 
     let expression = "0   *   *     *       *  *  *";
@@ -940,7 +940,7 @@ fn test_cron() -> Result<(), failure::Error> {
     cywad_server::populate_initial_state(&state_clone);
     cywad_server::run_scheduler(&state_clone, true);
     let now = chrono::Local::now();
-    let schedule = Schedule::from_str(expression).map_err(|e| format_err!("Cron error {}", e))?;
+    let schedule = Schedule::from_str(expression).map_err(|e| anyhow!("Cron error {}", e))?;
     {
         let state = state_clone.read().expect("RwLock error");
         debug!(
@@ -955,7 +955,7 @@ fn test_cron() -> Result<(), failure::Error> {
         assert!(
             state.results[0]
                 .scheduled
-                .ok_or_else(|| format_err!("Schedule empty"))?
+                .ok_or_else(|| anyhow!("Schedule empty"))?
                 > now
         );
         Ok(())

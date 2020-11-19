@@ -13,7 +13,7 @@ cywad-core = { path="../cywad-core", features = ["webkit"] }
 cfg-if = "0.1.10"
 log = "0.4.11"
 env_logger = "0.7.1"
-failure = "0.1.8"
+anyhow = "1.0"
 
 chrono = { version = "0.4.6", features = ["serde"]}
 

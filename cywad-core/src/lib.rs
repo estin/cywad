@@ -13,8 +13,8 @@ use std::str::FromStr;
 #[cfg(feature = "server")]
 use cron::Schedule;
 
-use failure::Error;
-use failure::{bail, format_err};
+use anyhow::Error;
+use anyhow::{anyhow, bail};
 use slug::slugify;
 
 pub const APP_NAME: Option<&'static str> = option_env!("CARGO_PKG_NAME");
@@ -214,7 +214,7 @@ pub fn validate_config(config: &Config) -> Result<(), Error> {
     {
         if let Some(ref schedule) = config.cron {
             if let Err(e) = Schedule::from_str(schedule) {
-                return Err(format_err!("'cron' field - {}", e));
+                return Err(anyhow!("'cron' field - {}", e));
             }
         }
     }
@@ -225,14 +225,14 @@ pub fn validate_config(config: &Config) -> Result<(), Error> {
             StepKind::Wait | StepKind::Value | StepKind::Exec => {
                 // `exec` field required for wait/value/exec
                 if step.exec.is_none() {
-                    return Err(format_err!(
+                    return Err(anyhow!(
                         "'wait/value/exec' step #{} without 'exec' field",
                         i + 1
                     ));
                 }
                 // `value` step must be with `key` field
                 if step.kind == StepKind::Value && step.key.is_none() {
-                    return Err(format_err!("'value' step #{} without 'key' field", i + 1));
+                    return Err(anyhow!("'value' step #{} without 'key' field", i + 1));
                 }
             }
             _ => {}
@@ -246,7 +246,7 @@ pub fn load_config(path: &str) -> Result<Config, Error> {
     let mut contents = String::new();
     file.read_to_string(&mut contents)?;
     let config: Config =
-        toml::from_str(&contents).map_err(|e| format_err!("Toml file parsing error: {}", e))?;
+        toml::from_str(&contents).map_err(|e| anyhow!("Toml file parsing error: {}", e))?;
     validate_config(&config)?;
     Ok(config)
 }
@@ -325,7 +325,7 @@ impl ExecutionContext {
             .config
             .steps
             .get(self.step_index)
-            .ok_or_else(|| format_err!("Step not found by index {}", self.step_index))?
+            .ok_or_else(|| anyhow!("Step not found by index {}", self.step_index))?
             .clone())
     }
 
@@ -342,7 +342,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         };
         debug!("[{}] Step index increased #{}", self, self.step_index);
         Ok(())
@@ -358,7 +358,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         };
         Ok(())
     }
@@ -373,7 +373,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         };
         Ok(())
     }
@@ -388,7 +388,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         };
         Ok(())
     }
@@ -425,7 +425,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         }
 
         Ok(())
@@ -455,7 +455,7 @@ impl ExecutionContext {
                 }
                 state.broadcast(self.config_index);
             }
-            Err(e) => return Err(format_err!("RWLock error: {}", e)),
+            Err(e) => return Err(anyhow!("RWLock error: {}", e)),
         }
 
         Ok(())

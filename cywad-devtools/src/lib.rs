@@ -1,10 +1,11 @@
-use failure::Error;
+// use failure::Error;
 
 use std::cmp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use failure::{bail, format_err};
+use anyhow::{bail, Error, anyhow};
+// use failure::{bail, format_err};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
@@ -100,7 +101,7 @@ struct JsonRpcRequest {
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<serde_json::Value, failure::Error>")]
+#[rtype(result = "Result<serde_json::Value, Error>")]
 struct ClientCmd {
     method: String,
     params: JsonRpcParams,
@@ -187,7 +188,7 @@ impl EngineTrait for Devtools {
                     .args(parts.collect::<Vec<&str>>())
                     .spawn()
                     .map_err(|e| {
-                        format_err!("browser command failed to start {} - {}", command, e)
+                        anyhow!("browser command failed to start {} - {}", command, e)
                     })?;
                 info!("Browser started with id: {}", browser.id());
                 Some(browser)
@@ -199,7 +200,8 @@ impl EngineTrait for Devtools {
         let uri = engine_options
             .endpoint
             .parse::<Uri>()
-            .map_err(|e| format_err!("On parse endopoint - {}", e))?;
+            .map_err(|e| anyhow!("On parse endopoint - {}", e))?;
+                        
         let host_port = format!(
             "{}:{}",
             uri.host().unwrap_or("127.0.0.1"),
@@ -222,7 +224,7 @@ impl EngineTrait for Devtools {
             info!("Try kill browser {}", process.id());
             process
                 .kill()
-                .map_err(|e| format_err!("browser kill error: {}", e))?;
+                .map_err(|e| anyhow!("browser kill error: {}", e))?;
 
             // now wait to ensure browser is killed
             for i in 0..CHECK_PORT_OPEN_TRIES {
@@ -250,7 +252,7 @@ impl Devtools {
         let config = {
             let s = state
                 .read()
-                .map_err(|e| format_err!("RWLock error: {}", e))?;
+                .map_err(|e| anyhow!("RWLock error: {}", e))?;
             s.configs[config_index].clone()
         };
 
@@ -258,7 +260,7 @@ impl Devtools {
         {
             let mut state = state
                 .write()
-                .map_err(|e| format_err!("RWLock error: {}", e))?;
+                .map_err(|e| anyhow!("RWLock error: {}", e))?;
             if let Some(item) = state.results.get_mut(config_index) {
                 // save previous success state
                 if item.state == ResultItemState::Done {
@@ -300,14 +302,14 @@ impl Devtools {
                 .send()
                 .map_err(|e| {
                     System::current().stop();
-                    format_err!("Failed to connect to debug port - {}", e)
+                    anyhow!("Failed to connect to debug port - {}", e)
                 })
                 .await?;
             let data = response
                 .json::<Vec<DevToolsResponse>>()
                 .map_err(|e| {
                     System::current().stop();
-                    format_err!("Failed to parse response - {}", e)
+                    anyhow!("Failed to parse response - {}", e)
                 })
                 .await?;
 
@@ -326,7 +328,7 @@ impl Devtools {
                 .connect()
                 .map_err(|e| {
                     System::current().stop();
-                    format_err!("Failed to connect to websocket - {}", e)
+                    anyhow!("Failed to connect to websocket - {}", e)
                 })
                 .await?;
 
@@ -348,7 +350,7 @@ impl Devtools {
                 .send(ClientCmd {
                     method: "Page.navigate".to_owned(),
                     params: JsonRpcParams::Navigate(NavigateParams {
-                        url: "chrome://system/".to_owned(),
+                        url: "chrome://system".to_owned(),
                     }),
                     timeout: execution_context.config.step_timeout,
                 })
@@ -488,7 +490,7 @@ impl Devtools {
                                 let mut buffer = Vec::<u8>::new();
                                 base64::decode_config_buf(value, base64::STANDARD, &mut buffer)
                                     .map_err(|e| {
-                                        format_err!("Faild to parse image Base64 - {}", e)
+                                        anyhow!("Faild to parse image Base64 - {}", e)
                                     })?;
 
                                 execution_context.add_screenshot_and_start_new_step(buffer)?;
@@ -539,7 +541,7 @@ impl Devtools {
                                     serde_json::Value::Number(res) => {
                                         execution_context.add_value_and_start_new_step(
                                             res.as_f64().ok_or_else(|| {
-                                                format_err!("Can't retrieve f64 value")
+                                                anyhow!("Can't retrieve f64 value")
                                             })?,
                                         )?;
                                     }
@@ -584,7 +586,7 @@ impl Devtools {
 impl actix::io::WriteHandler<WsProtocolError> for WSClient {}
 
 impl Handler<ClientCmd> for WSClient {
-    type Result = ResponseActFuture<Self, Result<serde_json::Value, failure::Error>>;
+    type Result = ResponseActFuture<Self, Result<serde_json::Value, Error>>;
 
     fn handle(&mut self, msg: ClientCmd, _ctx: &mut Context<Self>) -> Self::Result {
         let ts_start = Local::now().timestamp();
@@ -612,13 +614,13 @@ impl Handler<ClientCmd> for WSClient {
         };
 
         Box::new(
-            poll_fn(move |context| -> task::Poll<Result<bool, failure::Error>> {
+            poll_fn(move |context| -> task::Poll<Result<bool, Error>> {
                 if is_ready.load(Ordering::Relaxed) {
                     task::Poll::Ready(Ok(true))
                 } else {
                     let elapsed = (Local::now().timestamp() - ts_start) * 1000;
                     if elapsed > timeout {
-                        task::Poll::Ready(Err(format_err!(
+                        task::Poll::Ready(Err(anyhow!(
                             "WSClient request #{} timeout",
                             request_id
                         )))
@@ -636,13 +638,13 @@ impl Handler<ClientCmd> for WSClient {
             .into_actor(self)
             .map(move |_result, actor, _ctx| {
                 if actor.request_ready.remove(&request_id).is_none() {
-                    error!(
+                    bail!(
                         "Request #{} is't present in request ready slots",
                         request_id
                     );
                 };
                 match actor.responses.remove(&request_id) {
-                    None => Err(format_err!(
+                    None => Err(anyhow!(
                         "Request #{} is't present in responses slots",
                         request_id
                     )),

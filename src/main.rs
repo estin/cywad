@@ -1,11 +1,10 @@
+use anyhow::{anyhow, Error};
 use cfg_if::cfg_if;
-use failure::format_err;
 use log::{error, info};
 
 #[cfg(all(feature = "webkit", feature = "devtools"))]
 compile_error!("features `crate/webkit` and `crate/devtools` are mutually exclusive");
 
-use failure::Error;
 use std::sync::{Arc, RwLock};
 
 pub mod engine;
@@ -53,12 +52,12 @@ fn build_engine_options(matches: &clap::ArgMatches) -> Result<EngineOptions, Err
         if let Some(http_timeout) = matches.value_of("http_timeout") {
             options.http_timeout = http_timeout
                 .parse::<u64>()
-                .map_err(|e| format_err!("http-timeout options parse error: {}", e))?;
+                .map_err(|e| anyhow!("http-timeout options parse error: {}", e))?;
         }
         if let Some(max_frame_size) = matches.value_of("max_frame_size") {
             options.max_frame_size = max_frame_size
                 .parse::<usize>()
-                .map_err(|e| format_err!("max-frame-size options parse error: {}", e))?;
+                .map_err(|e| anyhow!("max-frame-size options parse error: {}", e))?;
         }
         options
     };
@@ -257,7 +256,7 @@ fn run() -> Result<(), Error> {
         let config = match load_config(config_file) {
             Ok(config) => config,
             Err(error) => {
-                return Err(format_err!(
+                return Err(anyhow!(
                     "Validation error! File {} - {}",
                     config_file,
                     error
@@ -277,7 +276,7 @@ fn run() -> Result<(), Error> {
         {
             let mut state = state_clone
                 .write()
-                .map_err(|e| format_err!("RwLock error: {}", e))?;
+                .map_err(|e| anyhow!("RwLock error: {}", e))?;
             state.results.push(ResultItem::new(&config.name));
             state.configs.push(config);
         }
@@ -287,23 +286,19 @@ fn run() -> Result<(), Error> {
 
         // convert sreenshot png to data:image/png;base64,...
         {
-            let mut state = state
-                .write()
-                .map_err(|e| format_err!("RwLock error: {}", e))?;
+            let mut state = state.write().map_err(|e| anyhow!("RwLock error: {}", e))?;
             let screenshots = &mut state.results[0].screenshots;
             for item in screenshots {
                 (*item).uri = format!("data:image/png;base64,{}", base64::encode(&item.data));
             }
         }
 
-        let state = state
-            .read()
-            .map_err(|e| format_err!("RwLock error: {}", e))?;
+        let state = state.read().map_err(|e| anyhow!("RwLock error: {}", e))?;
 
         println!(
             "{}",
             serde_json::to_string_pretty(&*state.results)
-                .map_err(|e| format_err!("Serde error: {}", e))?
+                .map_err(|e| anyhow!("Serde error: {}", e))?
         );
         return Ok(());
     }
@@ -313,7 +308,7 @@ fn run() -> Result<(), Error> {
         if let Some(matches) = matches.subcommand_matches("serve") {
             let path = matches
                 .value_of("path_to_config")
-                .ok_or_else(|| format_err!("Configuration error: path to config not defined"))?;
+                .ok_or_else(|| anyhow!("Configuration error: path to config not defined"))?;
 
             // set default actix settings
             if cfg!(feature = "server") {
@@ -348,7 +343,7 @@ fn run() -> Result<(), Error> {
                 let config = match load_config(filepath.as_str()) {
                     Ok(config) => config,
                     Err(error) => {
-                        return Err(format_err!(
+                        return Err(anyhow!(
                             "Validation error! File {} - {}",
                             filepath.as_str(),
                             error
@@ -366,7 +361,7 @@ fn run() -> Result<(), Error> {
             {
                 let mut state = state_clone
                     .write()
-                    .map_err(|e| format_err!("RwLock error: {}", e))?;
+                    .map_err(|e| anyhow!("RwLock error: {}", e))?;
 
                 for (_, config) in configs_by_filename {
                     state.results.push(ResultItem::new(&config.name));

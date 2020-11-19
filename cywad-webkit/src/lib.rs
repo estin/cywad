@@ -1,4 +1,3 @@
-use failure::Error;
 use std::io::Cursor;
 use std::sync::{Arc, Mutex};
 
@@ -11,13 +10,13 @@ use webkit2gtk::{
     CookieManagerExt, SettingsExt, TLSErrorsPolicy, WebContext, WebContextExt, WebView, WebViewExt,
 };
 
+use anyhow::{anyhow, Error};
 use chrono::prelude::Local;
 use cywad_core::{
     EngineOptions, EngineTrait, ExecutionContext, PreviouResultItemState, ResultItemState,
     SharedState, StepKind, StepResult,
 };
 
-use failure::format_err;
 use log::{debug, error, info, warn};
 
 pub struct Webkit;
@@ -50,12 +49,12 @@ fn get_screenshot(webview: &WebView) -> Result<Vec<u8>, Error> {
     let mut c = Cursor::new(vec);
     let allocation = webview.get_allocation();
     let surface = ImageSurface::create(Format::ARgb32, allocation.width, allocation.height)
-        .map_err(|_| format_err!("Unable create surface"))?;
+        .map_err(|_| anyhow!("Unable create surface"))?;
     let context = Context::new(&surface);
     webview.draw(&context);
     surface
         .write_to_png(&mut c)
-        .map_err(|_| format_err!("Unable write png"))?;
+        .map_err(|_| anyhow!("Unable write png"))?;
     Ok(c.into_inner())
 }
 
@@ -69,7 +68,7 @@ fn execute_step(
             warn!("Execution context locked by previous iteration...skip...");
             return Ok(ExecutionResult::InWork);
         }
-        let mut context = guard.map_err(|e| format_err!("Mutex error: {}", e))?;
+        let mut context = guard.map_err(|e| anyhow!("Mutex error: {}", e))?;
 
         // check timeout
         let elapsed = (Local::now().timestamp() - context.ts_start) * 1000;
@@ -128,7 +127,7 @@ fn execute_step(
         StepKind::Screenshot => {
             let mut context = execution_context
                 .lock()
-                .map_err(|e| format_err!("Mutex error: {}", e))?;
+                .map_err(|e| anyhow!("Mutex error: {}", e))?;
 
             context.add_screenshot_and_start_new_step(get_screenshot(&webview)?)?;
             context.step_result = StepResult::Idle;
@@ -240,17 +239,13 @@ impl EngineTrait for Webkit {
         gtk::init()?;
 
         let config = {
-            let s = state
-                .read()
-                .map_err(|e| format_err!("RWLock error: {}", e))?;
+            let s = state.read().map_err(|e| anyhow!("RWLock error: {}", e))?;
             s.configs[config_index].clone()
         };
 
         // initialize result
         {
-            let mut state = state
-                .write()
-                .map_err(|e| format_err!("RWLock error: {}", e))?;
+            let mut state = state.write().map_err(|e| anyhow!("RWLock error: {}", e))?;
             if let Some(item) = state.results.get_mut(config_index) {
                 // save previous success state
                 if item.state == ResultItemState::Done {
@@ -278,7 +273,7 @@ impl EngineTrait for Webkit {
         let step_interval = config.step_interval;
 
         let context =
-            WebContext::get_default().ok_or_else(|| format_err!("Error on get web context",))?;
+            WebContext::get_default().ok_or_else(|| anyhow!("Error on get web context",))?;
 
         context.set_tls_errors_policy(TLSErrorsPolicy::Ignore);
 
@@ -299,10 +294,10 @@ impl EngineTrait for Webkit {
         let window = Arc::clone(&window);
         let cookie_manager = context
             .get_cookie_manager()
-            .ok_or_else(|| format_err!("Fail to get cookie manager"))?;
+            .ok_or_else(|| anyhow!("Fail to get cookie manager"))?;
 
-        let settings = WebViewExt::get_settings(&webview)
-            .ok_or_else(|| format_err!("Fail to get settings"))?;
+        let settings =
+            WebViewExt::get_settings(&webview).ok_or_else(|| anyhow!("Fail to get settings"))?;
         settings.set_enable_developer_extras(true);
 
         window.resize(config.window_width as i32, config.window_height as i32);
