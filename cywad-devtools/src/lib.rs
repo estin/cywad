@@ -253,7 +253,9 @@ impl Devtools {
             let s = state
                 .read()
                 .map_err(|e| anyhow!("RWLock error: {}", e))?;
-            s.configs[config_index].clone()
+            s.configs
+                .get(config_index)
+                .ok_or_else(|| anyhow!("Config not found by index {}", config_index))?.clone()
         };
 
         // initialize result

@@ -14,7 +14,6 @@ use std::time::{Duration, Instant};
 use cfg_if::cfg_if;
 
 use chrono::prelude::{DateTime, Local};
-// use failure::format_err;
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
 
@@ -341,7 +340,7 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
 
     let data = ItemPush {
         server_datetime: now,
-        item: Cow::Borrowed(&state.results[index]),
+        item: Cow::Borrowed(state.results.get(index).ok_or_else(|| actix_web::error::ErrorBadRequest(format!("Result not found by index {}", index)))?),
     };
 
     let body = serde_json::to_string(&data)?;
