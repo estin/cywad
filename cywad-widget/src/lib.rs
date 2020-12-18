@@ -7,7 +7,7 @@ use chrono::prelude::{DateTime, Local};
 
 use image::{png, ColorType, Rgba, RgbaImage};
 use imageproc::drawing::draw_text_mut;
-use rusttype::{point, Font, FontCollection, Scale};
+use rusttype::{point, Font, Scale};
 
 use cywad_core::{AppInfo, ResultItemState, SharedState};
 
@@ -15,10 +15,7 @@ use failure::format_err;
 
 macro_rules! load_font {
     ($path:tt) => {{
-        FontCollection::from_bytes(Vec::from(include_bytes!($path) as &[u8]))
-            .expect("load font error")
-            .into_font()
-            .expect("init font error")
+        Font::try_from_bytes(include_bytes!($path) as &[u8]).expect("init font error")
     }};
 }
 
@@ -108,7 +105,7 @@ impl PNGWidget {
 
         // fill background
         if let Some(b) = self.background {
-            let color = Rgba { data: b };
+            let color = Rgba(b);
             for p in image.pixels_mut() {
                 *p = color;
             }
@@ -232,12 +229,7 @@ impl PNGWidget {
 
         let mut png: Vec<u8> = Vec::new();
 
-        png::PNGEncoder::new(&mut png).encode(
-            &image,
-            self.width,
-            self.height,
-            ColorType::RGBA(8),
-        )?;
+        png::PngEncoder::new(&mut png).encode(&image, self.width, self.height, ColorType::Rgba8)?;
 
         Ok(png)
     }
