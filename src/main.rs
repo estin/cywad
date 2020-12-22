@@ -385,7 +385,17 @@ fn run() -> Result<(), Error> {
                             engine_options.clone(),
                         ) {
                             Ok(()) => info!("Done"),
-                            Err(e) => error!("Engine error: {}", e),
+                            Err(e) => {
+                                error!("Engine error: {}", e);
+                                {
+                                    match state_clone.write() {
+                                        Ok(mut state) => state.mark_as_err(index),
+                                        Err(e) => {
+                                            error!("RWLock error: {}", e)
+                                        },
+                                    };
+                                }
+                            }
                         };
                     }
                 }

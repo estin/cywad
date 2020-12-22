@@ -737,9 +737,11 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                             Some(mut result) => {
                                 let scheduled = Some(datetime);
 
+                                // TODO item may hang in queue state by engine error ?
                                 if result.scheduled.is_some()
                                     && result.state == ResultItemState::InQueue
                                 {
+                                    debug!("Already in queue #{}. SKIP",  result.name);
                                     continue;
                                 }
 

@@ -12,6 +12,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - refactor: ws client actor logic 
 
 ### Fixed
+- mark result as failed on general engine error to prevent hangs
 - scheduler logic
 - update result item datetime on start processing 
 - ws request timeout

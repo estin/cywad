@@ -286,6 +286,20 @@ impl State {
             Some(new_tx_vec)
         }
     }
+
+    pub fn mark_as_err(&mut self, index: usize) {
+        debug!("Result item #{} mark as failed", index);
+        if let Some(item) = self.results.get_mut(index) {
+            item.state = ResultItemState::Err;
+            item.datetime = Local::now();
+            item.values.clear();
+            item.screenshots.clear();
+            item.steps_done = None;
+            item.steps_total = None;
+            item.attempt_count = Some(item.attempt_count.unwrap_or(0) + 1);
+        }
+        self.broadcast(index);
+    }
 }
 
 pub type SharedState = Arc<RwLock<State>>;
