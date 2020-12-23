@@ -21,7 +21,6 @@ use cron::Schedule;
 
 use ::http::header::AUTHORIZATION;
 
-use bytes::Bytes;
 use futures::future::FutureExt;
 use futures::{Future, Stream};
 
@@ -425,7 +424,7 @@ struct Sse {
 }
 
 impl Stream for Sse {
-    type Item = Result<Bytes, Error>;
+    type Item = Result<web::Bytes, Error>;
 
     // fn poll_next(&mut self) -> Poll<Result<Option<Bytes>, Error>> {
     fn poll_next(self: Pin<&mut Self>, cx: &mut Context) -> Poll<Option<Self::Item>> {
@@ -437,7 +436,7 @@ impl Stream for Sse {
                     item: Cow::Borrowed(&item),
                 };
                 if let Ok(payload) = serde_json::to_string(&data) {
-                    Poll::Ready(Some(Ok(Bytes::copy_from_slice(
+                    Poll::Ready(Some(Ok(web::Bytes::copy_from_slice(
                         &format!("event: item\ndata: {}\n\n", payload).as_bytes(),
                     ))))
                 } else {
@@ -453,7 +452,7 @@ impl Stream for Sse {
                         if now.duration_since(self.last_send) > self.hb_duration {
                             self.get_mut().last_send = now;
                             if let Ok(payload) = serde_json::to_string(&HeartBeat::default()) {
-                                return Poll::Ready(Some(Ok(Bytes::copy_from_slice(
+                                return Poll::Ready(Some(Ok(web::Bytes::copy_from_slice(
                                     &format!("event: heartbeat\ndata: {}\n\n", payload).as_bytes(),
                                 ))));
                             } else {
@@ -551,10 +550,9 @@ pub fn serve(listen: &str, state: SharedState, web_config: WebConfig) {
             .data(web_state)
             .wrap(Logger::default())
             .wrap(
-                Cors::new()
+                Cors::default()
                     .supports_credentials()
-                    .expose_headers(vec!["cywad-token"])
-                    .finish(),
+                    .expose_headers(vec!["cywad-token"]),
             )
             .wrap(BasicAuth::new(
                 web_config.username.as_ref().map(|v| v.as_ref()),
