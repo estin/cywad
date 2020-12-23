@@ -4,7 +4,7 @@ use std::cmp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
-use anyhow::{bail, Error, anyhow};
+use anyhow::{anyhow, bail, Error};
 // use failure::{bail, format_err};
 use log::{debug, error, info};
 use serde::{Deserialize, Serialize};
@@ -187,9 +187,7 @@ impl EngineTrait for Devtools {
                 let browser = Command::new(executable)
                     .args(parts.collect::<Vec<&str>>())
                     .spawn()
-                    .map_err(|e| {
-                        anyhow!("browser command failed to start {} - {}", command, e)
-                    })?;
+                    .map_err(|e| anyhow!("browser command failed to start {} - {}", command, e))?;
                 info!("Browser started with id: {}", browser.id());
                 Some(browser)
             }
@@ -201,7 +199,7 @@ impl EngineTrait for Devtools {
             .endpoint
             .parse::<Uri>()
             .map_err(|e| anyhow!("On parse endopoint - {}", e))?;
-                        
+
         let host_port = format!(
             "{}:{}",
             uri.host().unwrap_or("127.0.0.1"),
@@ -250,19 +248,16 @@ impl Devtools {
     ) -> Result<(), Error> {
         // create excution context
         let config = {
-            let s = state
-                .read()
-                .map_err(|e| anyhow!("RWLock error: {}", e))?;
+            let s = state.read().map_err(|e| anyhow!("RWLock error: {}", e))?;
             s.configs
                 .get(config_index)
-                .ok_or_else(|| anyhow!("Config not found by index {}", config_index))?.clone()
+                .ok_or_else(|| anyhow!("Config not found by index {}", config_index))?
+                .clone()
         };
 
         // initialize result
         {
-            let mut state = state
-                .write()
-                .map_err(|e| anyhow!("RWLock error: {}", e))?;
+            let mut state = state.write().map_err(|e| anyhow!("RWLock error: {}", e))?;
             if let Some(item) = state.results.get_mut(config_index) {
                 // save previous success state
                 if item.state == ResultItemState::Done {
@@ -491,9 +486,7 @@ impl Devtools {
                             if let serde_json::Value::String(value) = data {
                                 let mut buffer = Vec::<u8>::new();
                                 base64::decode_config_buf(value, base64::STANDARD, &mut buffer)
-                                    .map_err(|e| {
-                                        anyhow!("Faild to parse image Base64 - {}", e)
-                                    })?;
+                                    .map_err(|e| anyhow!("Faild to parse image Base64 - {}", e))?;
 
                                 execution_context.add_screenshot_and_start_new_step(buffer)?;
                             }
@@ -622,10 +615,7 @@ impl Handler<ClientCmd> for WSClient {
                 } else {
                     let elapsed = (Local::now().timestamp() - ts_start) * 1000;
                     if elapsed > timeout {
-                        task::Poll::Ready(Err(anyhow!(
-                            "WSClient request #{} timeout",
-                            request_id
-                        )))
+                        task::Poll::Ready(Err(anyhow!("WSClient request #{} timeout", request_id)))
                     } else {
                         let waker_clone = context.waker().clone();
                         tokio::spawn(async move {

@@ -339,7 +339,9 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
 
     let data = ItemPush {
         server_datetime: now,
-        item: Cow::Borrowed(state.results.get(index).ok_or_else(|| actix_web::error::ErrorBadRequest(format!("Result not found by index {}", index)))?),
+        item: Cow::Borrowed(state.results.get(index).ok_or_else(|| {
+            actix_web::error::ErrorBadRequest(format!("Result not found by index {}", index))
+        })?),
     };
 
     let body = serde_json::to_string(&data)?;
@@ -739,7 +741,7 @@ pub fn run_scheduler(state: &SharedState, one_shot: bool) {
                                 if result.scheduled.is_some()
                                     && result.state == ResultItemState::InQueue
                                 {
-                                    debug!("Already in queue #{}. SKIP",  result.name);
+                                    debug!("Already in queue #{}. SKIP", result.name);
                                     continue;
                                 }
 

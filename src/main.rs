@@ -392,7 +392,7 @@ fn run() -> Result<(), Error> {
                                         Ok(mut state) => state.mark_as_err(index),
                                         Err(e) => {
                                             error!("RWLock error: {}", e)
-                                        },
+                                        }
                                     };
                                 }
                             }

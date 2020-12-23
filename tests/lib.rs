@@ -1,5 +1,5 @@
+use anyhow::{anyhow, Error};
 use cron::Schedule;
-use anyhow::{Error, anyhow};
 
 use lazy_static::lazy_static;
 use log::debug;
@@ -168,8 +168,8 @@ fn test_validate_config() -> Result<(), Error> {
         [[steps]]
         kind = "wait"
     "#;
-    let config: Config = toml::from_str(&config_step_without_exec)
-        .map_err(|e| anyhow!("on load config - {}", e))?;
+    let config: Config =
+        toml::from_str(&config_step_without_exec).map_err(|e| anyhow!("on load config - {}", e))?;
 
     debug!("Config: {:#?}", config);
     assert_eq!(
@@ -189,8 +189,8 @@ fn test_validate_config() -> Result<(), Error> {
         kind = "value"
         exec = "return 1;"
     "#;
-    let config: Config = toml::from_str(&config_value_without_key)
-        .map_err(|e| anyhow!("on load config - {}", e))?;
+    let config: Config =
+        toml::from_str(&config_value_without_key).map_err(|e| anyhow!("on load config - {}", e))?;
 
     debug!("Config: {:#?}", config);
     assert_eq!(
