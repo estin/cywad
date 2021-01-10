@@ -12,6 +12,7 @@ members = [
   "cywad-devtools",
   "cywad-server",
   "cywad-widget",
+  "cywad-yew",
 ]
 
 [lib]

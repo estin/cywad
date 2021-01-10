@@ -18,6 +18,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ws request timeout
 - don't hang on worth devtools config response 
 
+### Added
+- frontend on yew introduced
+
 ## [0.1.2] - 2020-08-16
 
 ### Fixed

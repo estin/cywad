@@ -26,7 +26,7 @@ use futures_util::future::FutureExt;
 use futures_util::stream::StreamExt;
 
 use cywad_core::{
-    validate_config, Config, EngineOptions, EngineTrait, ResultItem, ResultItemState,
+    validate_config, Config, EngineOptions, EngineTrait, HeartBeat, ResultItem, ResultItemState,
     ScreenshotItem, SharedState, State,
 };
 
@@ -581,7 +581,7 @@ async fn test_server() -> Result<(), Error> {
     let req = test::TestRequest::get().uri("/api/items").to_request();
     let bytes = test::read_response(&mut srv, req).await;
     let body = str::from_utf8(&bytes)?;
-    let data: cywad_server::ItemsResponse = serde_json::from_str(body)?;
+    let data: cywad_server::ItemsResponseBorrow = serde_json::from_str(body)?;
     debug!("items {:?}", data.items);
     assert_eq!(data.items.len(), 1);
     let item = &data.items[0];
@@ -615,7 +615,7 @@ async fn test_server() -> Result<(), Error> {
     let req = test::TestRequest::get().uri("/api/items").to_request();
     let bytes = test::read_response(&mut srv, req).await;
     let body = str::from_utf8(&bytes)?;
-    let data: cywad_server::ItemsResponse = serde_json::from_str(body)?;
+    let data: cywad_server::ItemsResponseBorrow = serde_json::from_str(body)?;
     // let data: server::ItemsResponse = test::read_response_json(&mut srv, req);
     debug!("items {:?}", data.items);
     assert_eq!(data.items.len(), 1);
@@ -670,7 +670,7 @@ async fn test_server() -> Result<(), Error> {
         .split("data: ")
         .nth(1)
         .ok_or_else(|| anyhow!("Empty payload"))?;
-    let data: cywad_server::ItemPush = serde_json::from_str(payload)?;
+    let data: cywad_server::ItemResponseBorrow = serde_json::from_str(payload)?;
     assert_eq!(item.slug, data.item.slug);
 
     // heartbeat
@@ -684,7 +684,7 @@ async fn test_server() -> Result<(), Error> {
         .split("data: ")
         .nth(1)
         .ok_or_else(|| anyhow!("Empty payload"))?;
-    let _heartbeat: cywad_server::HeartBeat = serde_json::from_str(payload)?;
+    let _heartbeat: HeartBeat = serde_json::from_str(payload)?;
 
     // widget
     let req = test::TestRequest::get()

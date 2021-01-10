@@ -41,7 +41,7 @@ use actix_web::*;
 
 use regex::Regex;
 
-use cywad_core::{AppInfo, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
+use cywad_core::{AppInfo, HeartBeat, ResultItem, ResultItemState, SharedState, SCHEDULER_SLEEP};
 
 cfg_if! {
     if #[cfg(feature = "png_widget")] {
@@ -51,28 +51,15 @@ cfg_if! {
 
 // impl actix_web::error::ResponseError for failure::Error {}
 
-#[derive(Debug, Serialize, Deserialize)]
-pub struct HeartBeat {
-    pub server_datetime: DateTime<Local>,
-}
-
-impl HeartBeat {
-    pub fn default() -> Self {
-        HeartBeat {
-            server_datetime: Local::now(),
-        }
-    }
-}
-
 #[derive(Serialize, Deserialize)]
-pub struct ItemsResponse<'a> {
+pub struct ItemsResponseBorrow<'a> {
     pub info: AppInfo,
     #[serde(borrow)]
     pub items: Cow<'a, Vec<ResultItem>>,
 }
 
 #[derive(Serialize, Deserialize)]
-pub struct ItemPush<'a> {
+pub struct ItemResponseBorrow<'a> {
     pub server_datetime: DateTime<Local>,
     #[serde(borrow)]
     pub item: Cow<'a, ResultItem>,
@@ -250,7 +237,7 @@ async fn items(req: HttpRequest, web_state: web::Data<WebState>) -> Result<HttpR
         .read()
         .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
-    let data = ItemsResponse {
+    let data = ItemsResponseBorrow {
         info: AppInfo::default(),
         items: Cow::Borrowed(&state.results),
     };
@@ -337,7 +324,7 @@ async fn update(req: HttpRequest, web_state: web::Data<WebState>) -> Result<Http
         .read()
         .map_err(|_| actix_web::error::ErrorInternalServerError("Read state error"))?;
 
-    let data = ItemPush {
+    let data = ItemResponseBorrow {
         server_datetime: now,
         item: Cow::Borrowed(state.results.get(index).ok_or_else(|| {
             actix_web::error::ErrorBadRequest(format!("Result not found by index {}", index))
@@ -433,7 +420,7 @@ impl Stream for Sse {
         match self.rx.try_recv() {
             Ok(item) => {
                 self.get_mut().last_send = Instant::now();
-                let data = ItemPush {
+                let data = ItemResponseBorrow {
                     server_datetime: Local::now(),
                     item: Cow::Borrowed(&item),
                 };
@@ -547,15 +534,16 @@ pub fn serve(listen: &str, state: SharedState, web_config: WebConfig) {
             shared_state: Arc::clone(&state),
             config: web_config.clone(),
         };
+        let cors = Cors::default()
+            .allow_any_origin()
+            .allow_any_method()
+            .supports_credentials()
+            .expose_headers(vec!["cywad-token"]);
 
         App::new()
             .data(web_state)
             .wrap(Logger::default())
-            .wrap(
-                Cors::default()
-                    .supports_credentials()
-                    .expose_headers(vec!["cywad-token"]),
-            )
+            .wrap(cors)
             .wrap(BasicAuth::new(
                 web_config.username.as_ref().map(|v| v.as_ref()),
                 web_config.password.as_ref().map(|v| v.as_ref()),

@@ -260,13 +260,11 @@ impl Devtools {
             let mut state = state.write().map_err(|e| anyhow!("RWLock error: {}", e))?;
             if let Some(item) = state.results.get_mut(config_index) {
                 // save previous success state
-                if item.state == ResultItemState::Done {
-                    item.previous = Some(PreviouResultItemState {
-                        datetime: item.datetime,
-                        values: (&item.values).to_vec(),
-                        screenshots: (&item.screenshots).to_vec(),
-                    });
-                }
+                item.previous = Some(PreviouResultItemState {
+                    datetime: item.datetime,
+                    values: (&item.values).to_vec(),
+                    screenshots: (&item.screenshots).to_vec(),
+                });
 
                 // reset state
                 item.state = ResultItemState::InWork;

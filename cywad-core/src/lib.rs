@@ -476,6 +476,31 @@ impl ExecutionContext {
     }
 }
 
+#[derive(Debug, Serialize, Deserialize)]
+pub struct HeartBeat {
+    pub server_datetime: DateTime<Local>,
+}
+
+impl HeartBeat {
+    pub fn default() -> Self {
+        HeartBeat {
+            server_datetime: Local::now(),
+        }
+    }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ItemsResponse {
+    pub info: AppInfo,
+    pub items: Vec<ResultItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct ItemResponse {
+    pub server_datetime: DateTime<Local>,
+    pub item: ResultItem,
+}
+
 #[derive(Clone)]
 #[cfg(feature = "webkit")]
 pub struct EngineOptions {
@@ -491,6 +516,7 @@ pub struct EngineOptions {
     pub max_frame_size: usize,
 }
 
+#[cfg(any(feature = "devtools", feature = "webkit"))]
 impl Default for EngineOptions {
     #[cfg(feature = "webkit")]
     fn default() -> Self {
@@ -508,6 +534,7 @@ impl Default for EngineOptions {
     }
 }
 
+#[cfg(any(feature = "devtools", feature = "webkit"))]
 pub trait EngineTrait {
     fn execute(
         &mut self,
