@@ -1,6 +1,6 @@
 use super::{Model, Msg};
 
-use chrono::prelude::{Local};
+use chrono::prelude::Local;
 
 use yew::prelude::*;
 
@@ -173,7 +173,7 @@ impl Component for ItemCard {
                     <span class="text-gray-500 text-xs p-0.5">{ status_html }</span>
                     </p>
                 </header>
-                <div class="grid grid-cols-3 gap-2 h-20 place-items-auto items-left text-left justify-between leading-tight p-2 whitespace-nowrap text-sm">
+                <div class="flex h-20 place-items-auto items-left text-left justify-between leading-tight p-2 whitespace-nowrap text-sm">
                     { item.values.iter().map(render_value).collect::<Html>() }
                 </div>
                 <footer class="flex flex-row items-center justify-between p-2">
