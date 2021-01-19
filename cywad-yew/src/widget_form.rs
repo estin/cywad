@@ -1,3 +1,4 @@
+use chrono::{DateTime, Local};
 use yew::prelude::*;
 
 use super::get_api_url;
@@ -9,7 +10,13 @@ pub enum WidgetFormMsg {
     Noop,
 }
 
+#[derive(Properties, Clone)]
+pub struct WidgetProps {
+    pub server_datetime: DateTime<Local>,
+}
+
 pub struct WidgetForm {
+    props: WidgetProps,
     link: ComponentLink<Self>,
     width: usize,
     height: usize,
@@ -18,10 +25,11 @@ pub struct WidgetForm {
 
 impl Component for WidgetForm {
     type Message = WidgetFormMsg;
-    type Properties = ();
+    type Properties = WidgetProps;
 
-    fn create(_props: Self::Properties, link: ComponentLink<Self>) -> Self {
+    fn create(props: Self::Properties, link: ComponentLink<Self>) -> Self {
         Self {
+            props,
             link,
             width: 500,
             height: 100,
@@ -42,7 +50,17 @@ impl Component for WidgetForm {
         true
     }
 
-    fn change(&mut self, _props: Self::Properties) -> ShouldRender {
+    fn change(&mut self, props: Self::Properties) -> ShouldRender {
+        log::info!(
+            "WidgetForm change {:?} != {:?} is {:?}",
+            self.props.server_datetime,
+            props.server_datetime,
+            self.props.server_datetime != props.server_datetime
+        );
+        if self.props.server_datetime != props.server_datetime {
+            self.props = props;
+            return true;
+        }
         false
     }
 
@@ -72,39 +90,38 @@ impl Component for WidgetForm {
             WidgetFormMsg::Noop
         });
 
-        let url = get_api_url(&format!(
+        let widget_url = get_api_url(&format!(
             "/widget/png/{}/{}/{}",
             self.width, self.height, self.fontsize
         ));
+        let widget_src = format!("{}?t={}", widget_url, self.props.server_datetime);
 
         html! {
-            <div class="container mx-auto mt-1">
-                <div class="w-1/2 mx-auto bg-white rounded shadow-lg">
-                    <div class="p-4 text-black text-xl border-b border-grey-lighter">{ "PNG widget preview" }</div>
-                    <div class="p-4">
-                        <div class="flex mb-4 justify-between">
-                            <div class="w-1/3">
-                                <label class="block text-grey-darker text-sm font-bold m-2" for="width">{ "Width" }</label>
-                                <input onchange=on_width class="appearance-none border rounded m-2 text-grey-darker" id="width" type="text" placeholder="Width" value=self.width />
-                            </div>
-                            <div class="w-1/3">
-                                <label class="block text-grey-darker text-sm font-bold m-2" for="height">{ "Height" }</label>
-                                <input onchange=on_height class="appearance-none border rounded m-2 text-grey-darker" id="height" type="text" placeholder="Height" value=self.height />
-                            </div>
-                            <div class="w-1/3">
-                                <label class="block text-grey-darker text-sm font-bold m-2" for="font">{ "Font size" }</label>
-                                <input onchange=on_fontsize class="appearance-none border rounded m-2 text-grey-darker" id="font" type="text" placeholder="Font size" value=self.fontsize />
-                            </div>
+            <div class="p-4 mx-auto lg:w-1/3 bg-white rounded shadow-lg">
+                <div class="p-4 text-black text-xl border-b border-grey-lighter">{ "PNG widget preview" }</div>
+                <div class="p-4">
+                    <div class="flex flex-auto mb-4 justify-between">
+                        <div class="w-1/3">
+                            <label class="block text-grey-darker text-sm font-bold" for="width">{ "Width" }</label>
+                            <input onchange=on_width class="appearance-none border rounded text-grey-darker" id="width" type="text" placeholder="Width" value=self.width size="5"/>
                         </div>
-                        <div class="mb-4">
-                            <label class="block text-grey-darker text-sm font-bold mb-2" for="url">{ "URL" }</label>
-                            <a class="text-grey-ligther text-sm" id="url" href=url.to_owned() target="_blank">{ &url }</a>
+                        <div class="w-1/3">
+                            <label class="block text-grey-darker text-sm font-bold" for="height">{ "Height" }</label>
+                            <input onchange=on_height class="appearance-none border rounded text-grey-darker" id="height" type="text" placeholder="Height" value=self.height  size="5"/>
                         </div>
-                        <div class="mb-4">
-                            <label class="block text-grey-darker text-sm font-bold mb-2" for="password">{ "Preview" }</label>
-                            <img class="border-4 border-blue-500 border-opacity-25" src=&url />
-                            <p class="text-grey text-xs mt-1">{ "Don't forget add token param to url "}</p>
+                        <div class="w-1/3">
+                            <label class="block text-grey-darker text-sm font-bold whitespace-nowrap" for="font">{ "Font size" }</label>
+                            <input onchange=on_fontsize class="appearance-none border rounded text-grey-darker" id="font" type="text" placeholder="Font size" value=self.fontsize  size="5"/>
                         </div>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-grey-darker text-sm font-bold mb-2" for="url">{ "URL" }</label>
+                        <a class="text-grey-ligther text-xs" id="url" href=widget_url.to_owned() target="_blank">{ &widget_url }</a>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-grey-darker text-sm font-bold mb-2" for="password">{ "Preview" }</label>
+                        <img class="border-4 border-blue-500 border-opacity-25" src=&widget_src />
+                        <p class="text-grey text-xs mt-1">{ "Don't forget add token param to url "}</p>
                     </div>
                 </div>
             </div>

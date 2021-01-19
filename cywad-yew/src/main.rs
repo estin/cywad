@@ -220,7 +220,7 @@ impl Component for Model {
             }
         };
 
-        let screenshot_modal_html = || -> Html {
+        let screenshot_modal_html = {
             match self.item_screenshots_index {
                 Some(index) => match &self.data {
                     Some(data) => match data.items.get(index) {
@@ -235,6 +235,12 @@ impl Component for Model {
             }
         };
 
+        let widget_form_html = if let Some(data) = &self.data {
+            html! { <WidgetForm server_datetime=data.info.server_datetime /> }
+        } else {
+            html! {}
+        };
+
         // https://codepen.io/codetimeio/pen/RYMEJe
         html! {
             <div class="container my-6 mx-auto px-4 md:px-12">
@@ -242,8 +248,8 @@ impl Component for Model {
                 <div class="flex flex-wrap -mx-1 lg:-mx-4">
                     { items() }
                 </div>
-                { screenshot_modal_html() }
-                <WidgetForm />
+                { screenshot_modal_html }
+                { widget_form_html }
             </div>
         }
     }
