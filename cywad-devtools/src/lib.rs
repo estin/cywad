@@ -1,6 +1,5 @@
 // use failure::Error;
 
-use std::cmp;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -29,12 +28,12 @@ use actix_web::client;
 use actix_web::http::Uri;
 
 use chrono::prelude::Local;
-use futures::future::{FutureExt, TryFutureExt};
+use futures::future::TryFutureExt;
 use futures::stream::{SplitSink, StreamExt};
 
 use futures::future::poll_fn;
 use futures::task;
-use tokio::time;
+// use tokio::time;
 
 use awc::{
     error::WsProtocolError,
@@ -105,7 +104,6 @@ struct JsonRpcRequest {
 struct ClientCmd {
     method: String,
     params: JsonRpcParams,
-    timeout: i64, // request timeout in ms
 }
 
 #[derive(Deserialize, Debug)]
@@ -144,6 +142,7 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
             info!("Server: {:?}", txt);
             match serde_json::from_slice::<serde_json::Value>(&txt) {
                 Ok(v) => {
+                    let mut response_is_valid = false;
                     if let Some(response_id) = v.get("id") {
                         if let Some(response_id) = response_id.as_u64() {
                             let response_id = response_id as usize;
@@ -151,9 +150,14 @@ impl StreamHandler<Result<Frame, WsProtocolError>> for WSClient {
                                 if let Some(slot) = self.request_ready.get_mut(&response_id) {
                                     self.responses.insert(response_id, result.clone());
                                     slot.store(true, Ordering::Relaxed);
+                                    response_is_valid = true;
                                 }
                             }
                         }
+                    }
+
+                    if !response_is_valid {
+                        error!("WS response have't id or result attribute");
                     }
                 }
                 Err(e) => {
@@ -279,7 +283,8 @@ impl Devtools {
             state.broadcast(config_index);
         }
 
-        let sys = System::new("cywad");
+        // let sys = System::new("cywad");
+        let mut sys = System::new("cywad");
 
         info!(
             "Try connect to {} with timeout {}s",
@@ -333,7 +338,7 @@ impl Devtools {
                 WSClient::add_stream(stream, ctx);
                 WSClient {
                     writer: SinkWrite::new(sink, ctx),
-                    request_id: 0,
+                    request_id: Local::now().timestamp() as usize,
                     // execution_context: ExecutionContext::new(config, config_index, state),
                     responses: HashMap::new(),
                     request_ready: HashMap::new(),
@@ -347,8 +352,10 @@ impl Devtools {
                     params: JsonRpcParams::Navigate(NavigateParams {
                         url: "chrome://system".to_owned(),
                     }),
-                    timeout: execution_context.config.step_timeout,
                 })
+                .timeout(Duration::from_millis(
+                    execution_context.config.step_timeout as u64,
+                ))
                 .await?;
 
             // not supported?
@@ -364,8 +371,10 @@ impl Devtools {
                 .send(ClientCmd {
                     method: "Network.clearBrowserCookies".to_owned(),
                     params: JsonRpcParams::WithoutParams,
-                    timeout: execution_context.config.step_timeout,
                 })
+                .timeout(Duration::from_millis(
+                    execution_context.config.step_timeout as u64,
+                ))
                 .await?;
 
             // ignore certificate errors
@@ -373,8 +382,10 @@ impl Devtools {
                 .send(ClientCmd {
                     method: "Security.setIgnoreCertificateErrors".to_owned(),
                     params: JsonRpcParams::Security(SecurityParams { ignore: true }),
-                    timeout: execution_context.config.step_timeout,
                 })
+                .timeout(Duration::from_millis(
+                    execution_context.config.step_timeout as u64,
+                ))
                 .await?;
 
             // open url
@@ -383,8 +394,10 @@ impl Devtools {
                 .send(ClientCmd {
                     method: "Page.navigate".to_owned(),
                     params: JsonRpcParams::Navigate(NavigateParams { url }),
-                    timeout: execution_context.config.step_timeout,
                 })
+                .timeout(Duration::from_millis(
+                    execution_context.config.step_timeout as u64,
+                ))
                 .await?;
 
             // set window size
@@ -403,8 +416,10 @@ impl Devtools {
                             otype: "portraitPrimary".into(),
                         },
                     }),
-                    timeout: execution_context.config.step_timeout,
                 })
+                .timeout(Duration::from_millis(
+                    execution_context.config.step_timeout as u64,
+                ))
                 .await?;
 
             // start process
@@ -423,9 +438,13 @@ impl Devtools {
                         execution_context, execution_context.step_index
                     );
                     if let Err(e) = execution_context.timeout() {
-                        error!("Some error on set state - {}", e);
+                        bail!("Some error on set state - {}", e);
                     }
-                    System::current().stop();
+                    bail!(
+                        "[{}] Step #{} timeout",
+                        execution_context,
+                        execution_context.step_index
+                    );
                 }
 
                 let step = execution_context.get_step()?;
@@ -438,8 +457,10 @@ impl Devtools {
                                 params: JsonRpcParams::Capture(CaptureParams {
                                     format: "png".into(),
                                 }),
-                                timeout: execution_context.config.step_timeout,
                             })
+                            .timeout(Duration::from_millis(
+                                execution_context.config.step_timeout as u64,
+                            ))
                             .await?
                     }
                     StepKind::Wait => {
@@ -454,8 +475,10 @@ impl Devtools {
                                 params: JsonRpcParams::Evaluate(EvaluateParams {
                                     expression: exec.to_string(),
                                 }),
-                                timeout: execution_context.config.step_timeout,
                             })
+                            .timeout(Duration::from_millis(
+                                execution_context.config.step_timeout as u64,
+                            ))
                             .await?
                     }
                     StepKind::Value | StepKind::Exec => {
@@ -470,8 +493,10 @@ impl Devtools {
                                 params: JsonRpcParams::Evaluate(EvaluateParams {
                                     expression: exec.to_string(),
                                 }),
-                                timeout: execution_context.config.step_timeout,
                             })
+                            .timeout(Duration::from_millis(
+                                execution_context.config.step_timeout as u64,
+                            ))
                             .await?
                     }
                 };
@@ -503,14 +528,21 @@ impl Devtools {
                                 execution_context.error("Some error".to_owned())?;
                             }
                             System::current().stop();
-                            return Ok(());
+                            bail!("Some js runtime error")
                         }
 
                         let response: serde_json::Value =
                             if let Some(response) = response.get("result") {
                                 response.clone()
                             } else {
-                                return Ok(());
+                                let message = "WS response without result attribute";
+                                error!(
+                                    "[{}] Step #{} {}",
+                                    execution_context, execution_context.step_index, message,
+                                );
+                                execution_context.error(message.to_owned())?;
+                                System::current().stop();
+                                bail!(message)
                             };
                         debug!("Step response: {}", response);
 
@@ -522,7 +554,14 @@ impl Devtools {
                                 let value = if let Some(value) = response.get("value") {
                                     value.clone()
                                 } else {
-                                    return Ok(());
+                                    let message = "WS response without value";
+                                    error!(
+                                        "[{}] Step #{} {}",
+                                        execution_context, execution_context.step_index, message,
+                                    );
+                                    execution_context.error(message.to_owned())?;
+                                    System::current().stop();
+                                    bail!(message)
                                 };
                                 debug!("Step evaluation value: {}", value);
                                 match value {
@@ -568,11 +607,11 @@ impl Devtools {
             Ok::<(), Error>(())
         };
 
-        actix::spawn(fut.map(|_| ()));
+        // actix::spawn(fut.map(|_| ()));
+        // let _ = sys.run();
+        // Ok(())
 
-        let _ = sys.run();
-
-        Ok(())
+        sys.block_on(fut)
     }
 }
 
@@ -582,8 +621,6 @@ impl Handler<ClientCmd> for WSClient {
     type Result = ResponseActFuture<Self, Result<serde_json::Value, Error>>;
 
     fn handle(&mut self, msg: ClientCmd, _ctx: &mut Context<Self>) -> Self::Result {
-        let ts_start = Local::now().timestamp();
-        let timeout = msg.timeout;
         let request_id = self.request_id;
         let is_ready_slot = Arc::new(AtomicBool::new(false));
         let is_ready = Arc::clone(&is_ready_slot);
@@ -598,31 +635,24 @@ impl Handler<ClientCmd> for WSClient {
                 info!("send {} - {}", self.request_id, cmd);
                 self.request_id += 1;
                 if let Err(we) = self.writer.write(awc::ws::Message::Text(cmd)) {
-                    error!("Error on send messages {}", we);
+                    return Box::new(actix::fut::wrap_future(futures::future::ready(Err(
+                        anyhow!("Error on send messages {}", we),
+                    ))));
                 }
             }
             Err(e) => {
-                error!("Build request error: {}", e);
+                return Box::new(actix::fut::wrap_future(futures::future::ready(Err(
+                    anyhow!("Build request error {}", e),
+                ))));
             }
         };
 
         Box::new(
-            poll_fn(move |context| -> task::Poll<Result<bool, Error>> {
+            poll_fn(move |_context| -> task::Poll<Result<bool, Error>> {
                 if is_ready.load(Ordering::Relaxed) {
                     task::Poll::Ready(Ok(true))
                 } else {
-                    let elapsed = (Local::now().timestamp() - ts_start) * 1000;
-                    if elapsed > timeout {
-                        task::Poll::Ready(Err(anyhow!("WSClient request #{} timeout", request_id)))
-                    } else {
-                        let waker_clone = context.waker().clone();
-                        tokio::spawn(async move {
-                            let delay = cmp::max(timeout as u64 / 10 as u64, 100);
-                            time::delay_for(Duration::from_millis(delay)).await;
-                            waker_clone.wake_by_ref();
-                        });
-                        task::Poll::Pending
-                    }
+                    task::Poll::Pending
                 }
             })
             .into_actor(self)
@@ -634,10 +664,7 @@ impl Handler<ClientCmd> for WSClient {
                     );
                 };
                 match actor.responses.remove(&request_id) {
-                    None => Err(anyhow!(
-                        "Request #{} is't present in responses slots",
-                        request_id
-                    )),
+                    None => bail!("Request #{} is't present in responses slots", request_id),
                     Some(result) => Ok(result),
                 }
             }),

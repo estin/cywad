@@ -401,7 +401,7 @@ fn test_engine_timeout() -> Result<(), Error> {
 
     assert!(engine
         .execute(0, state_clone, EngineOptions::default())
-        .is_ok());
+        .is_err());
     let state = state.read().expect("RwLock error");
     let result = &state.results[0];
     assert!(result.is_err());
@@ -462,7 +462,7 @@ fn test_engine_error() -> Result<(), Error> {
 
     assert!(engine
         .execute(0, state_clone, EngineOptions::default())
-        .is_ok());
+        .is_err());
     let state = state.read().expect("RwLock error");
     let result = &state.results[0];
     assert!(result.is_err());
